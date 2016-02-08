@@ -6,3 +6,5 @@ authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>"]
 [dependencies]
 iron = "*"
 router = "*"
+rusqlite = "*"
+uuid = "*"
