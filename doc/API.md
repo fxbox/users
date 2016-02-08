@@ -68,27 +68,27 @@ The currently-defined error responses are:
 # API Endpoints
 
 * Setup
-    * [POST /setup/](#post-setup)
+    * [POST /setup](#post-setup)
 * Invitations
-    * [POST /invitations/](#post-invitations) :lock: (scope: admin)
-    * [GET /invitations/](#get-invitations) :lock: (scope: admin)
-    * [DELETE /invitations/:id/](#delete-invitations) :lock: (scope: admin)
+    * [POST /invitations](#post-invitations) :lock: (scope: admin)
+    * [GET /invitations](#get-invitations) :lock: (scope: admin)
+    * [DELETE /invitations/:id](#delete-invitations) :lock: (scope: admin)
 * Users
-    * [POST /users/](#post-users) :lock: (scope: admin)
-    * [GET /users/](#get-users) :lock: (scope: admin)
-    * [PUT /users/:id/](#put-users) :lock: (scope: owner)
-    * [DELETE /users/:id/](#delete-usersid) :lock: (scope: admin, owner)
+    * [POST /users](#post-users) :lock: (scope: admin)
+    * [GET /users](#get-users) :lock: (scope: admin)
+    * [PUT /users/:id](#put-users) :lock: (scope: owner)
+    * [DELETE /users/:id](#delete-usersid) :lock: (scope: admin, owner)
 * Access recovery
-    * [POST /recoveries/:user/](#post-recoveriesuser)
-    * [GET /recoveries/:user/:id/](#get-recoveriesuserid) :lock: (scope: recovery)
+    * [POST /recoveries/:user](#post-recoveriesuser)
+    * [GET /recoveries/:user/:id](#get-recoveriesuserid) :lock: (scope: recovery)
 * Permissions
-    * [GET /permissions/](#get-permissions) :lock: (scope: admin)
-    * [GET /permissions/:user/](#get-permissionsuser) :lock: (scope: admin, owner)
-    * [GET /permissions/:user/:taxon/](#get-permissionsusertaxon) :lock: (scope: admin, owner)
-    * [GET /permissions/_/:taxon/](#get-permissions_taxon) :lock: (scope: admin)
-    * [PUT /permissions/:user/:taxon/](#put-permissionsusertaxon) :lock: (scope: admin)
+    * [GET /permissions](#get-permissions) :lock: (scope: admin)
+    * [GET /permissions/:user](#get-permissionsuser) :lock: (scope: admin, owner)
+    * [GET /permissions/:user/:taxon](#get-permissionsusertaxon) :lock: (scope: admin, owner)
+    * [GET /permissions/_/:taxon](#get-permissions_taxon) :lock: (scope: admin)
+    * [PUT /permissions/:user/:taxon](#put-permissionsusertaxon) :lock: (scope: admin)
 
-## POST /setup/
+## POST /setup
 Allow to initiate the box by registering an admin user. **Once the admin user is created, this route will be removed**.
 ### Request
 ___Parameters___
@@ -117,7 +117,7 @@ Failing requests may be due to the following errors:
 * status code 400, errno 100: Invalid user name.
 * status code 400, errno 101: Invalid email. The email that you gave has the wrong format.
 
-## POST /invitations/
+## POST /invitations
 Send an invitation for a user to register with the box.
 ### Request
 ___Parameters___
@@ -158,7 +158,7 @@ Failing requests may be due to the following errors:
 * status code 409, errno 301: Already registered. The user you are trying to invite is already registered in the box.
 * status code 498, errno 401:  Token expired/invalid.
 
-## GET /invitations/
+## GET /invitations
 Give the current list of active invitations.
 ### Request
 ```ssh
@@ -184,7 +184,7 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
 Failing requests may be due to the following errors:
 * status code 401, errno 201:  Unauthorized. The credentials you passed are not valid. You need a token with 'admin' scope to access this endpoint.
 
-## DELETE /invitations/:id/
+## DELETE /invitations/:id
 Revoke a invitation.
 ### Request
 ___Parameters___
@@ -204,7 +204,7 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
 Failing requests may be due to the following errors:
 * status code 401, errno 201:  Unauthorized. The credentials you passed are not valid. You need a token with 'admin' scope to access this endpoint.
 
-## POST /users/
+## POST /users
 Register a new FoxBox user.
 ### Request
 The request must be authenticated with a bearer token with scope "user-creation"
@@ -235,7 +235,7 @@ Failing requests may be due to the following errors:
 * status code 401, errno 201:  Unauthorized. The credentials you passed are not valid.
 * status code 409, errno 301:  Already registered. The user name or email are already registered with the box.
 
-## GET /users/
+## GET /users
 Give the list of registered users
 ### Request
 ```ssh
@@ -258,7 +258,7 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
   }]
 }
 ```
-## PUT /users/:id/
+## PUT /users/:id
 Modifies a registered user.
 ### Request
 ___Parameters___
@@ -288,7 +288,7 @@ Failing requests may be due to the following errors:
 * status code 401, errno 201:  Unauthorized. The credentials you passed are not valid.
 * status code 409, errno 301:  Already registered. The user name or email are already registered with the box.
 
-## DELETE /users/:id/
+## DELETE /users/:id
 Unregister a box user.
 ### Request
 ___Parameters___
@@ -308,7 +308,7 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
 Failing requests may be due to the following errors:
 * status code 401, errno 201:  Unauthorized. The credentials you passed are not valid. You need a token with 'admin' scope to access this endpoint.
 
-## POST /recoveries/:user/
+## POST /recoveries/:user
 Start the password reset process for a user that lost access to the box.
 ### Request
 ___Parameters___
@@ -331,7 +331,7 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
 Failing requests may be due to the following errors:
 * status code 404, errno 404: Resource not found. The user identifier is not valid.
 
-## PUT /recoveries/:id/
+## PUT /recoveries/:id
 Allow an user to change her account password.
 ### Request
 ___Parameters___
@@ -353,23 +353,23 @@ Date: Mon, 5 Feb 2016 16:17:50 GMT
 Failing requests may be due to the following errors:
 * status code 404, errno 404: Resource not found. The access recovery identifier is not valid.
 
-## GET /permissions/
+## GET /permissions
 ### Request
 ### Response
 
-## GET /permissions/:user/
+## GET /permissions/:user
 ### Request
 ### Response
 
-## GET /permissions/:user/:taxon/
+## GET /permissions/:user/:taxon
 ### Request
 ### Response
 
-## GET /permissions/_/:taxon/
+## GET /permissions/_/:taxon
 ### Request
 ### Response
 
-## PUT /permissions/:user/:taxon/
+## PUT /permissions/:user/:taxon
 ### Request
 ### Response
 

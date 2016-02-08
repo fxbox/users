@@ -1,0 +1,8 @@
+[package]
+name = "foxbox_users"
+version = "0.1.0"
+authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>"]
+
+[dependencies]
+iron = "*"
+router = "*"
