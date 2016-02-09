@@ -19,6 +19,68 @@ pub struct User {
     pub password: String
 }
 
+#[derive(Debug)]
+pub struct UserBuilder {
+    id: Option<i32>,
+    name: String,
+    email: String,
+    password: String,
+    error: Option<UserBuilderError>
+}
+
+#[derive(Clone, Debug)]
+pub enum UserBuilderError {
+    InvalideUsername,
+    InvalidEmail,
+    InvalidPassword
+}
+
+impl UserBuilder {
+    pub fn new() -> UserBuilder {
+        UserBuilder {
+            id: None,
+            name: "".to_string(),
+            email: "".to_string(),
+            password: "".to_string(),
+            error: None
+        }
+    }
+
+    pub fn id(&mut self, id: i32) -> &mut UserBuilder {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn name(&mut self, name: String) -> &mut UserBuilder {
+        self.name = name;
+        self
+    }
+
+    pub fn email(&mut self, email: String) -> &mut UserBuilder {
+        self.email = email;
+        self
+    }
+
+    pub fn password(&mut self, password: String) -> &mut UserBuilder {
+        let mut md5 = Md5::new();
+        md5.input_str(&password);
+        self.password = md5.result_str();
+        self
+    }
+
+    pub fn finalize(&self) -> Result<User, UserBuilderError> {
+        match self.error {
+            Some(ref error) => Err(error.clone()),
+            None => Ok(User {
+                id: self.id,
+                name: self.name.clone(),
+                email: self.email.clone(),
+                password: self.password.clone()
+            })
+        }
+    }
+}
+
 pub struct UsersDb {
     connection: Connection
 }
@@ -39,11 +101,9 @@ impl UsersDb {
     }
 
     pub fn create(&self, user: &User) -> rusqlite::Result<c_int> {
-        let mut md5 = Md5::new();
-        md5.input_str(&user.password);
         self.connection.execute("INSERT INTO users
             (name, email, password) VALUES ($1, $2, $3)",
-            &[&user.name, &user.email, &md5.result_str()]
+            &[&user.name, &user.email, &user.password]
         )
     }
 
@@ -63,9 +123,9 @@ impl UsersDb {
         Ok(users)
     }
 
-    pub fn update(&self, user: &User) -> rusqlite::Result<c_int> {
-        self.connection.execute("UPDATE users SET name=$1, email=$2
-            WHERE id=$3", &[&user.name, &user.email, &user.id])
+    pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
+        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3
+            WHERE id=$3", &[&user.name, &user.email, &user.password, &id])
     }
 
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {

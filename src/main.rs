@@ -8,19 +8,20 @@ extern crate foxbox_users;
 extern crate iron;
 extern crate router;
 
-use foxbox_users::users_db::{User, UsersDb};
+use foxbox_users::users_db::{UserBuilder, UsersDb};
 use foxbox_users::users_router::UsersRouter;
 use iron::prelude::*;
 use router::Router;
 
 fn main() {
     let db = UsersDb::new();
-    let user = User {
-        id: None,
-        name: "Peter".to_string(),
-        email: "peter@domain.org".to_string(),
-        password: "pass".to_string()
-    };
+    let user = UserBuilder::new()
+        .name("Peter".to_string())
+        .email("peter@domain.org".to_string())
+        .password("pass".to_string())
+        .finalize()
+        .unwrap();
+
     println!("Creating user {:?}", user);
     match db.create(&user) {
         Ok(_) => println!("Yay!"),
@@ -31,7 +32,7 @@ fn main() {
             println!("Users {:?}", users);
             let mut user = users[0].clone();
             user.name = "Pedro".to_string();
-            db.update(&user).unwrap();
+            db.update(user.id.unwrap(), &user).unwrap();
         },
         Err(err) => println!("Crap {}", err)
     }
