@@ -16,9 +16,9 @@ use router::Router;
 fn main() {
     let db = UsersDb::new();
     let user = UserBuilder::new()
-        .name("Peter".to_string())
-        .email("peter@domain.org".to_string())
-        .password("pass".to_string())
+        .name("Peter")
+        .email("peter@domain.org")
+        .password("pass")
         .finalize()
         .unwrap();
 

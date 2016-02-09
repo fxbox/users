@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+extern crate crypto;
 extern crate libc;
 extern crate rusqlite;
-extern crate crypto;
 
 use self::crypto::digest::Digest;
 use self::crypto::md5::Md5;
@@ -36,6 +36,8 @@ pub enum UserBuilderError {
 }
 
 impl UserBuilder {
+    const MIN_PASS_LEN: usize = 8;
+
     pub fn new() -> UserBuilder {
         UserBuilder {
             id: None,
@@ -51,19 +53,36 @@ impl UserBuilder {
         self
     }
 
-    pub fn name(&mut self, name: String) -> &mut UserBuilder {
-        self.name = name;
+    pub fn name(&mut self, name: &str) -> &mut UserBuilder {
+        if name.is_empty() {
+            self.error = Some(UserBuilderError::InvalideUsername);
+            return self;
+        }
+        self.name = name.to_string();
         self
     }
 
-    pub fn email(&mut self, email: String) -> &mut UserBuilder {
-        self.email = email;
+    pub fn email(&mut self, email: &str) -> &mut UserBuilder {
+        if email.is_empty() {
+            self.error = Some(UserBuilderError::InvalidEmail);
+            return self;
+        }
+        let parts: Vec<&str> = email.rsplitn(2, '@').collect();
+        if parts[0].is_empty() || parts[1].is_empty() {
+            self.error = Some(UserBuilderError::InvalidEmail);
+            return self;
+        }
+        self.email = email.to_string();
         self
     }
 
-    pub fn password(&mut self, password: String) -> &mut UserBuilder {
+    pub fn password(&mut self, password: &str) -> &mut UserBuilder {
+        if password.is_empty() || password.len() < UserBuilder::MIN_PASS_LEN {
+            self.error = Some(UserBuilderError::InvalidPassword);
+            return self;
+        }
         let mut md5 = Md5::new();
-        md5.input_str(&password);
+        md5.input_str(password);
         self.password = md5.result_str();
         self
     }
@@ -125,7 +144,7 @@ impl UsersDb {
 
     pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
         self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3
-            WHERE id=$3", &[&user.name, &user.email, &user.password, &id])
+            WHERE id=$4", &[&user.name, &user.email, &user.password, &id])
     }
 
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
