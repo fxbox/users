@@ -4,7 +4,10 @@
 
 extern crate libc;
 extern crate rusqlite;
+extern crate crypto;
 
+use self::crypto::digest::Digest;
+use self::crypto::md5::Md5;
 use self::libc::{c_int};
 use self::rusqlite::Connection;
 
@@ -12,7 +15,8 @@ use self::rusqlite::Connection;
 pub struct User {
     pub id: Option<i32>,
     pub name: String,
-    pub email: String
+    pub email: String,
+    pub password: String
 }
 
 pub struct UsersDb {
@@ -23,9 +27,10 @@ impl UsersDb {
     pub fn new() -> UsersDb {
         let connection = Connection::open_in_memory().unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
-                id      INTEGER PRIMARY KEY AUTOINCREMENT,
-                name    TEXT NOT NULL,
-                email   TEXT NOT NULL
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                email       TEXT NOT NULL,
+                password    TEXT NOT NULL
             )", &[]).unwrap();
 
         UsersDb {
@@ -34,9 +39,11 @@ impl UsersDb {
     }
 
     pub fn create(&self, user: &User) -> rusqlite::Result<c_int> {
+        let mut md5 = Md5::new();
+        md5.input_str(&user.password);
         self.connection.execute("INSERT INTO users
-            (name, email) VALUES ($1, $2)",
-            &[&user.name, &user.email]
+            (name, email, password) VALUES ($1, $2, $3)",
+            &[&user.name, &user.email, &md5.result_str()]
         )
     }
 
@@ -49,7 +56,8 @@ impl UsersDb {
             users.push(User {
                 id: row.get(0),
                 name: row.get(1),
-                email: row.get(2)
+                email: row.get(2),
+                password: row.get(3)
             });
         }
         Ok(users)

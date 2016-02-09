@@ -18,7 +18,8 @@ fn main() {
     let user = User {
         id: None,
         name: "Peter".to_string(),
-        email: "peter@domain.org".to_string()
+        email: "peter@domain.org".to_string(),
+        password: "pass".to_string()
     };
     println!("Creating user {:?}", user);
     match db.create(&user) {
