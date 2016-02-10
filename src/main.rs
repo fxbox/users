@@ -18,7 +18,7 @@ fn main() {
     let user = UserBuilder::new()
         .name("Peter")
         .email("peter@domain.org")
-        .password("pass")
+        .password("pass12345678")
         .finalize()
         .unwrap();
 
@@ -48,6 +48,6 @@ fn main() {
         Err(err) => println!("Crap {}", err)
     }
     let mut router = Router::new();
-    UsersRouter::start(&mut router);
+    UsersRouter::start(&mut router, "/users");
     Iron::new(router).http("localhost:3000").unwrap();
 }
