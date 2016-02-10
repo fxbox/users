@@ -11,7 +11,6 @@ extern crate router;
 use foxbox_users::users_db::{UserBuilder, UsersDb};
 use foxbox_users::users_router::UsersRouter;
 use iron::prelude::*;
-use router::Router;
 
 fn main() {
     let db = UsersDb::new();
@@ -47,7 +46,6 @@ fn main() {
         Ok(users) => println!("Users {:?}", users),
         Err(err) => println!("Crap {}", err)
     }
-    let mut router = Router::new();
-    UsersRouter::start(&mut router, "/users");
+    let router = UsersRouter::new();
     Iron::new(router).http("localhost:3000").unwrap();
 }

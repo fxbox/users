@@ -7,6 +7,7 @@ extern crate router;
 
 use self::iron::prelude::*;
 use self::iron::status;
+use self::router::Router;
 
 pub struct UsersRouter;
 
@@ -16,25 +17,29 @@ impl UsersRouter {
         Ok(Response::with(status::NotImplemented))
     }
 
-    pub fn start(router: &mut router::Router, prefix: &str) {
-        router.post(prefix.to_string() + "/setup", UsersRouter::not_implemented);
+    pub fn new() -> router::Router {
+        let mut router = Router::new();
 
-        router.post(prefix.to_string() + "/invitation", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/invitation", UsersRouter::not_implemented);
-        router.delete(prefix.to_string() + "/invitation", UsersRouter::not_implemented);
+        router.post("/setup", UsersRouter::not_implemented);
 
-        router.post(prefix.to_string() + "/users", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/users", UsersRouter::not_implemented);
-        router.put(prefix.to_string() + "/users/:id", UsersRouter::not_implemented);
-        router.post(prefix.to_string() + "/users/:id", UsersRouter::not_implemented);
+        router.post("/invitation", UsersRouter::not_implemented);
+        router.get("/invitation", UsersRouter::not_implemented);
+        router.delete("invitation", UsersRouter::not_implemented);
 
-        router.post(prefix.to_string() + "/recoveries/:user", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/recoveries/:user/:id", UsersRouter::not_implemented);
+        router.post("/users", UsersRouter::not_implemented);
+        router.get("/users", UsersRouter::not_implemented);
+        router.put("/users/:id", UsersRouter::not_implemented);
+        router.post("/users/:id", UsersRouter::not_implemented);
 
-        router.get(prefix.to_string() + "/permissions", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/permissions/:user", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/permissions/:user/:taxon", UsersRouter::not_implemented);
-        router.get(prefix.to_string() + "/permissions/_/:taxon", UsersRouter::not_implemented);
-        router.put(prefix.to_string() + "/permissions/:user/:taxon", UsersRouter::not_implemented);
+        router.post("/recoveries/:user", UsersRouter::not_implemented);
+        router.get("/recoveries/:user/:id", UsersRouter::not_implemented);
+
+        router.get("/permissions", UsersRouter::not_implemented);
+        router.get("/permissions/:user", UsersRouter::not_implemented);
+        router.get("/permissions/:user/:taxon", UsersRouter::not_implemented);
+        router.get("/permissions/_/:taxon", UsersRouter::not_implemented);
+        router.put("/permissions/:user/:taxon", UsersRouter::not_implemented);
+
+        router
     }
 }
