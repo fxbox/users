@@ -16,7 +16,12 @@ impl UsersRouter {
         Ok(Response::with(status::NotImplemented))
     }
 
-    pub fn start(router: &mut router::Router, prefix: &str) {
+    pub fn start(router: &mut router::Router, prfx: Option<&'static str>) {
+        let mut prefix = String::new();
+        match prfx {
+            Some(param) => prefix = param.to_string(),
+            None => prefix = "".to_string(),
+        }
         router.post(prefix.to_string() + "/setup", UsersRouter::not_implemented);
 
         router.post(prefix.to_string() + "/invitation", UsersRouter::not_implemented);

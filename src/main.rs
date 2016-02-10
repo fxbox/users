@@ -48,6 +48,8 @@ fn main() {
         Err(err) => println!("Crap {}", err)
     }
     let mut router = Router::new();
-    UsersRouter::start(&mut router, "/users");
+    UsersRouter::start(&mut router, Some("/users"));
+    // For an unprefixed solution do:
+    // UsersRouter::start(&mut router, None);
     Iron::new(router).http("localhost:3000").unwrap();
 }
