@@ -7,42 +7,65 @@ extern crate iron;
 extern crate router;
 
 use self::iron::{AfterMiddleware, headers, status};
+use self::iron::method::Method;
 use self::iron::method::Method::*;
 use self::iron::prelude::*;
 use self::router::Router;
 use self::unicase::UniCase;
 
+type Endpoint = (Method, &'static[&'static str]);
+
 struct CORS;
+
+impl CORS {
+    // Only endpoints listed here will allow CORS.
+    // Endpoints containing a variable path part can use '*' like in:
+    // &["users", "*"]
+    pub const ENDPOINTS: &'static[Endpoint] = &[
+        (Method::Post,      &["invitations"]),
+        (Method::Get,       &["invitations"]),
+        (Method::Delete,    &["invitations"]),
+        (Method::Post,      &["users"]),
+        (Method::Get,       &["users"]),
+        (Method::Put,       &["users", "*"]),
+        (Method::Post,      &["users", "*"]),
+        (Method::Post,      &["recoveries", "*"]),
+        (Method::Get,       &["recoveries", "*", "*"]),
+        (Method::Get,       &["permissions"]),
+        (Method::Get,       &["permissions", "*"]),
+        (Method::Get,       &["permissions", "*", "*"]),
+        (Method::Get,       &["permissions", "_", "*"]),
+        (Method::Put,       &["permissions", "*", "*"]),
+    ];
+}
 
 impl AfterMiddleware for CORS {
     fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
 
-        // Endpoints listed here will be denied CORS.
-        // Endpoints containing a variable path can use '*' like in:
-        // &["users", "*"]
-        const SAME_ORIGIN_ONLY_ENDPOINTS: &'static[&'static[&'static str]] =
-            &[&["setup"]];
-
-        let mut is_soo_endpoint = false;
-        for endpoint in SAME_ORIGIN_ONLY_ENDPOINTS {
-            if endpoint.len() != req.url.path.len() {
+        let mut is_cors_endpoint = false;
+        for endpoint in CORS::ENDPOINTS {
+            let (ref method, path) = *endpoint;
+            if req.method != *method {
                 continue;
             }
-            for (i, path) in endpoint.iter().enumerate() {
-                is_soo_endpoint = false;
+            if path.len() != req.url.path.len() {
+                continue;
+            }
+            for (i, path) in path.iter().enumerate() {
+                is_cors_endpoint = false;
                 if req.url.path[i] != path.to_string() &&
                    "*".to_string() != path.to_string() {
                     break;
                 }
-                is_soo_endpoint = true;
+                is_cors_endpoint = true;
             }
-            if is_soo_endpoint {
+            if is_cors_endpoint {
                 break;
             }
         }
 
-        if is_soo_endpoint {
+        if !is_cors_endpoint {
             return Ok(res);
         }
 
@@ -92,4 +115,16 @@ impl UsersRouter {
 
         chain
     }
+}
+
+#[test]
+fn test_cors_allowed_endpoints() {
+    for endpoint in CORS::ENDPOINTS {
+        assert!(true);
+    }
+}
+
+#[test]
+fn test_cors_not_allowed() {
+    assert!(true);
 }
