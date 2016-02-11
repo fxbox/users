@@ -119,12 +119,51 @@ impl UsersRouter {
 
 #[test]
 fn test_cors_allowed_endpoints() {
-    for endpoint in CORS::ENDPOINTS {
-        assert!(true);
-    }
-}
+    use std::net::ToSocketAddrs;
+    use self::iron::{method, TypeMap, Url};
 
-#[test]
-fn test_cors_not_allowed() {
-    assert!(true);
+    // Stub request
+    fn request<'a, 'b>(method: &Method, path: &str) -> Request<'a, 'b> {
+        let path = "http://localhost:3000/".to_string() + path;
+        Request {
+            url: Url::parse(&path).unwrap(),
+            remote_addr:
+                "localhost:3000".to_socket_addrs().unwrap().next().unwrap(),
+            local_addr:
+                "localhost:3000".to_socket_addrs().unwrap().next().unwrap(),
+            headers: headers::Headers::new(),
+            body: unsafe { ::std::mem::uninitialized() },
+            method: method.clone(),
+            extensions: TypeMap::new()
+        }
+    }
+
+    // Test that all CORS allowed endpoints get the appropriate CORS headers.
+    for endpoint in CORS::ENDPOINTS {
+        let (ref method, path) = *endpoint;
+        let path = path.join("/");
+        let mut req = request(method, &path);
+        match CORS.after(&mut req, Response::new()) {
+            Ok(res) => {
+                let headers = &res.headers;
+                assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                assert!(headers.has::<headers::AccessControlAllowMethods>());
+            },
+            _ => assert!(false)
+        }
+    }
+
+    // Test that non-CORS-allowed endpoints like POST /setup don't get CORS
+    // headers in the response.
+    let mut req = request(&method::Post, "/setup");
+    match CORS.after(&mut req, Response::new()) {
+        Ok(res) => {
+            let headers = &res.headers;
+            assert!(!headers.has::<headers::AccessControlAllowOrigin>());
+            assert!(!headers.has::<headers::AccessControlAllowHeaders>());
+            assert!(!headers.has::<headers::AccessControlAllowMethods>());
+        },
+        _ => assert!(false)
+    }
 }
