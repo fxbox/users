@@ -141,7 +141,7 @@ fn test_cors_allowed_endpoints() {
     // Test that all CORS allowed endpoints get the appropriate CORS headers.
     for endpoint in CORS::ENDPOINTS {
         let (ref method, path) = *endpoint;
-        let path = path.join("/");
+        let path = path.join("/").replace("*", "foo");
         let mut req = request(method, &path);
         match CORS.after(&mut req, Response::new()) {
             Ok(res) => {
