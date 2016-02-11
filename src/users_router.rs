@@ -15,8 +15,37 @@ use self::unicase::UniCase;
 struct CORS;
 
 impl AfterMiddleware for CORS {
-    fn after(&self, _: &mut Request, mut res: Response)
+    fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
+
+        // Endpoints listed here will be denied CORS.
+        // Endpoints containing a variable path can use '*' like in:
+        // &["users", "*"]
+        const SAME_ORIGIN_ONLY_ENDPOINTS: &'static[&'static[&'static str]] =
+            &[&["setup"]];
+
+        let mut is_soo_endpoint = false;
+        for endpoint in SAME_ORIGIN_ONLY_ENDPOINTS {
+            if endpoint.len() != req.url.path.len() {
+                continue;
+            }
+            for (i, path) in endpoint.iter().enumerate() {
+                is_soo_endpoint = false;
+                if req.url.path[i] != path.to_string() &&
+                   "*".to_string() != path.to_string() {
+                    break;
+                }
+                is_soo_endpoint = true;
+            }
+            if is_soo_endpoint {
+                break;
+            }
+        }
+
+        if is_soo_endpoint {
+            return Ok(res);
+        }
+
         res.headers.set(headers::AccessControlAllowOrigin::Any);
         res.headers.set(headers::AccessControlAllowHeaders(
                 vec![UniCase("accept".to_string()),
@@ -40,9 +69,9 @@ impl UsersRouter {
 
         router.post("/setup", UsersRouter::not_implemented);
 
-        router.post("/invitation", UsersRouter::not_implemented);
-        router.get("/invitation", UsersRouter::not_implemented);
-        router.delete("invitation", UsersRouter::not_implemented);
+        router.post("/invitations", UsersRouter::not_implemented);
+        router.get("/invitations", UsersRouter::not_implemented);
+        router.delete("invitations", UsersRouter::not_implemented);
 
         router.post("/users", UsersRouter::not_implemented);
         router.get("/users", UsersRouter::not_implemented);
