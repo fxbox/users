@@ -30,7 +30,7 @@ pub struct UserBuilder {
 
 #[derive(Clone, Debug)]
 pub enum UserBuilderError {
-    InvalideUsername,
+    InvalidUsername,
     InvalidEmail,
     InvalidPassword
 }
@@ -55,7 +55,7 @@ impl UserBuilder {
 
     pub fn name(&mut self, name: &str) -> &mut UserBuilder {
         if name.is_empty() {
-            self.error = Some(UserBuilderError::InvalideUsername);
+            self.error = Some(UserBuilderError::InvalidUsername);
             return self;
         }
         self.name = name.to_string();
@@ -149,5 +149,42 @@ impl UsersDb {
 
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
         self.connection.execute("DELETE FROM users WHERE id=$1", &[&id])
+    }
+}
+
+
+/// Module for testing the User creating and test_incorrect_user_creation
+/// with the database.
+#[cfg(test)]
+mod tests {
+    use super::crypto::digest::Digest;
+    use super::crypto::md5::Md5;
+    use super::*;
+
+    #[test]
+    fn test_user_builder() {
+        let user = UserBuilder::new()
+            .id(1)
+            .name("Mr Fox")
+            .email("fox@mozilla.org")
+            .password("pass12345678")
+            .finalize()
+            .unwrap();
+
+        assert_eq!(user.id, Some(1));
+        assert_eq!(user.name, "Mr Fox");
+        assert_eq!(user.email, "fox@mozilla.org");
+        let mut md5 = Md5::new();
+        md5.input_str("pass12345678");
+        assert_eq!(user.password, md5.result_str());
+    }
+
+    #[test]
+    #[should_panic(expected="InvalidUsername")]
+    fn test_incorrect_user_creation() {
+        let _user = UserBuilder::new()
+            .name("")
+            .finalize()
+            .unwrap();
     }
 }
