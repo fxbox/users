@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use super::users_db::{UserBuilder, UserBuilderError, UsersDb};
+use super::users_db::{UserBuilder, UsersDb};
+use super::errors::*;
 
 use iron::{AfterMiddleware, headers, status};
 use iron::method::Method;
@@ -13,7 +14,6 @@ use rustc_serialize::json;
 use unicase::UniCase;
 
 use std::error::Error;
-use std::fmt::{self, Debug};
 use std::io::Read;
 
 type Endpoint = (Method, &'static[&'static str]);
@@ -82,30 +82,6 @@ impl AfterMiddleware for CORS {
     }
 }
 
-#[derive(Debug)]
-struct StringError(String);
-
-impl fmt::Display for StringError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(self, f)
-    }
-}
-
-impl Error for StringError {
-    fn description(&self) -> &str {
-        &*self.0
-    }
-}
-
-struct EndpointError;
-
-impl EndpointError {
-    pub fn new(error: StringError, code: status::Status)
-        -> IronResult<Response> {
-        Err(IronError::new(error, code))
-    }
-}
-
 pub struct UsersRouter;
 
 impl UsersRouter {
@@ -116,8 +92,8 @@ impl UsersRouter {
     fn setup(req: &mut Request) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
-            username: Option<String>,
-            email: Option<String>,
+            username: String,
+            email: String,
             password: String
         }
 
@@ -125,49 +101,33 @@ impl UsersRouter {
         req.body.read_to_string(&mut payload).unwrap();
         let body: SetupBody = match json::decode(&payload) {
             Ok(body) => body,
-            Err(err) => {
-                return EndpointError::new(
-                    StringError(err.description().to_string()),
-                    status::BadRequest
-                );
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
             }
-        };
-
-        let email = match body.email {
-            Some(email) => email,
-            None => "".to_string()
-        };
-
-        let name = match body.username {
-            Some(username) => username,
-            None => "admin".to_string()
         };
 
         let admin = match UserBuilder::new()
-            .name(&name)
-            .email(&email)
+            .name(&body.username)
+            .email(&body.email)
             .password(&body.password)
             .finalize() {
-            Ok(user) => user,
-            Err(err) => {
-                if err.error != UserBuilderError::EmptyEmail {
+                Ok(user) => user,
+                Err(error) => {
+                    println!("{:?}", error);
                     return EndpointError::new(
-                        StringError("Bad request".to_string()),
-                        status::BadRequest
+                        status::BadRequest,
+                        400
                     );
                 }
-                err.user
-            }
-        };
+            };
 
         let db = UsersDb::new();
         match db.create(&admin) {
             Ok(_) => Ok(Response::with(status::Ok)),
-            Err(_) => {
-                EndpointError::new(
-                    StringError("Internal Server Error".to_string()),
-                    status::InternalServerError
-                )
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
             }
         }
     }
@@ -204,7 +164,7 @@ impl UsersRouter {
 
 #[test]
 fn test_cors_allowed_endpoints() {
-    use self::iron::method;
+    use iron::method;
     use super::stubs::*;
 
     // Test that all CORS allowed endpoints get the appropriate CORS headers.
@@ -239,8 +199,8 @@ fn test_cors_allowed_endpoints() {
 
 #[test]
 fn test_users_router_not_implemented_endpoints() {
-    use self::iron::middleware::Handler;
-    use self::iron::status::Status;
+    use iron::middleware::Handler;
+    use iron::status::Status;
     use super::stubs::*;
 
     let router = UsersRouter::new();

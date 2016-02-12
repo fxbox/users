@@ -7,13 +7,18 @@
 #![feature(const_fn)] // Dependency of stainless
 #![plugin(stainless)] // Test runner
 
-extern crate unicase;
+extern crate crypto;
 extern crate iron;
+extern crate libc;
 extern crate router;
 extern crate rustc_serialize;
+extern crate rusqlite;
+extern crate unicase;
 
 pub mod users_db;
 pub mod users_router;
+
+mod errors;
 
 #[cfg(test)]
 mod stubs;

@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate crypto;
-extern crate libc;
-extern crate rusqlite;
-
-use self::crypto::digest::Digest;
-use self::crypto::md5::Md5;
-use self::libc::{c_int};
-use self::rusqlite::Connection;
+use crypto::digest::Digest;
+use crypto::md5::Md5;
+use libc::{c_int};
+use rusqlite::{self, Connection};
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct User {
@@ -183,8 +179,8 @@ impl UsersDb {
 describe! user_builder_tests {
 
     it "should build a user correctly" {
-        use super::crypto::digest::Digest;
-        use super::crypto::md5::Md5;
+        use crypto::digest::Digest;
+        use crypto::md5::Md5;
 
         let user = UserBuilder::new()
             .id(1)
