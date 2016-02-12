@@ -11,7 +11,7 @@ use self::crypto::md5::Md5;
 use self::libc::{c_int};
 use self::rusqlite::Connection;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct User {
     pub id: Option<i32>,
     pub name: String,
@@ -152,17 +152,12 @@ impl UsersDb {
     }
 }
 
+describe! user_builder_tests {
 
-/// Module for testing the User creating and test_incorrect_user_creation
-/// with the database.
-#[cfg(test)]
-mod tests {
-    use super::crypto::digest::Digest;
-    use super::crypto::md5::Md5;
-    use super::*;
+    it "should build a user correctly" {
+        use super::crypto::digest::Digest;
+        use super::crypto::md5::Md5;
 
-    #[test]
-    fn test_user_builder() {
         let user = UserBuilder::new()
             .id(1)
             .name("Mr Fox")
@@ -179,12 +174,63 @@ mod tests {
         assert_eq!(user.password, md5.result_str());
     }
 
-    #[test]
-    #[should_panic(expected="InvalidUsername")]
-    fn test_incorrect_user_creation() {
+    failing "should panic if invalid user" {
         let _user = UserBuilder::new()
             .name("")
             .finalize()
             .unwrap();
+    }
+}
+
+describe! user_db_tests {
+    before_each {
+        let usersDb = UsersDb::new();
+
+        let defaultUsers = vec![
+            UserBuilder::new().id(1).name("User1")
+                .email("user1@mozilla.org").password("password1").finalize().unwrap(),
+            UserBuilder::new().id(2).name("User2")
+                .email("user2@mozilla.org").password("password2").finalize().unwrap(),
+            UserBuilder::new().id(3).name("User3")
+                .email("user3@mozilla.org").password("password3").finalize().unwrap(),
+        ];
+
+        for user in &defaultUsers {
+            usersDb.create(user);
+        }
+
+        // Check integrity
+        match usersDb.read() {
+            Ok(users) => assert_eq!(users.len(), _users.len),
+            Err(err) => panic!("Error reading database {}", err),
+        }
+    }
+
+    it "should read users from db" {
+        let usersInDb = usersDb.read().unwrap();
+        assert_eq!(usersInDb.len(), defaultUsers.len());
+
+        for i in 0..usersInDb.len() {
+            assert_eq!(usersInDb[i], defaultUsers[i]);
+        }
+    }
+
+    it "should delete users correctly" {
+        usersDb.delete(1).unwrap();
+        let usersInDb = usersDb.read().unwrap();
+        assert_eq!(usersInDb.len(), defaultUsers.len() -1);
+
+        assert_eq!(usersInDb, &defaultUsers[1..]);
+    }
+
+    it "should update users correctly" {
+        let mut user = defaultUsers[0].clone();
+        user.name = "New Name".to_string();
+
+        usersDb.update(user.id.unwrap(), &user).unwrap();
+
+        let users = usersDb.read().unwrap();
+
+        assert_eq!(user, users[0]);
     }
 }
