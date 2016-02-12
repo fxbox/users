@@ -196,7 +196,7 @@ describe! user_db_tests {
         ];
 
         for user in &defaultUsers {
-            usersDb.create(user);
+            usersDb.create(user).unwrap();
         }
 
         // Check integrity
