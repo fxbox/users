@@ -2,16 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate unicase;
-extern crate iron;
-extern crate router;
+use super::users_db::{UserBuilder, UserBuilderError, UsersDb};
 
-use self::iron::{AfterMiddleware, headers, status};
-use self::iron::method::Method;
-use self::iron::method::Method::*;
-use self::iron::prelude::*;
-use self::router::Router;
-use self::unicase::UniCase;
+use iron::{AfterMiddleware, headers, status};
+use iron::method::Method;
+use iron::method::Method::*;
+use iron::prelude::*;
+use router::Router;
+use rustc_serialize::json;
+use unicase::UniCase;
+
+use std::error::Error;
+use std::fmt::{self, Debug};
+use std::io::Read;
 
 type Endpoint = (Method, &'static[&'static str]);
 
@@ -79,6 +82,30 @@ impl AfterMiddleware for CORS {
     }
 }
 
+#[derive(Debug)]
+struct StringError(String);
+
+impl fmt::Display for StringError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl Error for StringError {
+    fn description(&self) -> &str {
+        &*self.0
+    }
+}
+
+struct EndpointError;
+
+impl EndpointError {
+    pub fn new(error: StringError, code: status::Status)
+        -> IronResult<Response> {
+        Err(IronError::new(error, code))
+    }
+}
+
 pub struct UsersRouter;
 
 impl UsersRouter {
@@ -86,10 +113,69 @@ impl UsersRouter {
         Ok(Response::with(status::NotImplemented))
     }
 
-    pub fn new() -> iron::middleware::Chain {
+    fn setup(req: &mut Request) -> IronResult<Response> {
+        #[derive(RustcDecodable, Debug)]
+        struct SetupBody {
+            username: Option<String>,
+            email: Option<String>,
+            password: String
+        }
+
+        let mut payload = String::new();
+        req.body.read_to_string(&mut payload).unwrap();
+        let body: SetupBody = match json::decode(&payload) {
+            Ok(body) => body,
+            Err(err) => {
+                return EndpointError::new(
+                    StringError(err.description().to_string()),
+                    status::BadRequest
+                );
+            }
+        };
+
+        let email = match body.email {
+            Some(email) => email,
+            None => "".to_string()
+        };
+
+        let name = match body.username {
+            Some(username) => username,
+            None => "admin".to_string()
+        };
+
+        let admin = match UserBuilder::new()
+            .name(&name)
+            .email(&email)
+            .password(&body.password)
+            .finalize() {
+            Ok(user) => user,
+            Err(err) => {
+                if err.error != UserBuilderError::EmptyEmail {
+                    return EndpointError::new(
+                        StringError("Bad request".to_string()),
+                        status::BadRequest
+                    );
+                }
+                err.user
+            }
+        };
+
+        let db = UsersDb::new();
+        match db.create(&admin) {
+            Ok(_) => Ok(Response::with(status::Ok)),
+            Err(_) => {
+                EndpointError::new(
+                    StringError("Internal Server Error".to_string()),
+                    status::InternalServerError
+                )
+            }
+        }
+    }
+
+    pub fn new() -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
-        router.post("/setup", UsersRouter::not_implemented);
+        router.post("/setup", UsersRouter::setup);
 
         router.post("/invitations", UsersRouter::not_implemented);
         router.get("/invitations", UsersRouter::not_implemented);
@@ -160,7 +246,6 @@ fn test_users_router_not_implemented_endpoints() {
     let router = UsersRouter::new();
 
     const ENDPOINTS: &'static[Endpoint] = &[
-        (Method::Post,      &["setup"]),
         (Method::Post,      &["invitations"]),
         (Method::Get,       &["invitations"]),
         (Method::Delete,    &["invitations"]),
@@ -180,8 +265,12 @@ fn test_users_router_not_implemented_endpoints() {
     for endpoint in ENDPOINTS {
         let (ref method, path) = *endpoint;
         let path = path.join("/").replace("*", "foo");
-        let mut req = request(method, &path);
-        let res = Handler::handle(&router, &mut req);
+        let res = Handler::handle(&router, &mut request(method, &path));
         assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
     }
+}
+
+#[test]
+fn test_setup_endpoint() {
+    assert!(true);
 }

@@ -7,6 +7,10 @@
 #![feature(const_fn)] // Dependency of stainless
 #![plugin(stainless)] // Test runner
 
+extern crate unicase;
+extern crate iron;
+extern crate router;
+extern crate rustc_serialize;
 
 pub mod users_db;
 pub mod users_router;
