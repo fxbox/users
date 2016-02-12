@@ -10,3 +10,6 @@
 
 pub mod users_db;
 pub mod users_router;
+
+#[cfg(test)]
+mod stubs;
