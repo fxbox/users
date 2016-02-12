@@ -10,4 +10,4 @@ router = "*"
 rusqlite = "*"
 rust-crypto = "*"
 unicase = "*"
-stainless = { git = "https://github.com/reem/stainless.git" }
+stainless = { git = "https://github.com/reem/stainless.git", rev = "82392f2e" }
