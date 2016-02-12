@@ -104,9 +104,19 @@ pub struct UsersDb {
     connection: Connection
 }
 
+#[cfg(test)]
+fn get_db_environment() -> String {
+    ":memory:".to_string()
+}
+
+#[cfg(not(test))]
+fn get_db_environment() -> String {
+    "./users_db.sqlite".to_string()
+}
+
 impl UsersDb {
     pub fn new() -> UsersDb {
-        let connection = Connection::open_in_memory().unwrap();
+        let connection = Connection::open(get_db_environment()).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL,
