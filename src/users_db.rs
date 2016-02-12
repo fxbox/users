@@ -11,7 +11,7 @@ use self::crypto::md5::Md5;
 use self::libc::{c_int};
 use self::rusqlite::Connection;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct User {
     pub id: Option<i32>,
     pub name: String,
@@ -30,7 +30,7 @@ pub struct UserBuilder {
 
 #[derive(Clone, Debug)]
 pub enum UserBuilderError {
-    InvalideUsername,
+    InvalidUsername,
     InvalidEmail,
     InvalidPassword
 }
@@ -55,7 +55,7 @@ impl UserBuilder {
 
     pub fn name(&mut self, name: &str) -> &mut UserBuilder {
         if name.is_empty() {
-            self.error = Some(UserBuilderError::InvalideUsername);
+            self.error = Some(UserBuilderError::InvalidUsername);
             return self;
         }
         self.name = name.to_string();
@@ -149,5 +149,88 @@ impl UsersDb {
 
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
         self.connection.execute("DELETE FROM users WHERE id=$1", &[&id])
+    }
+}
+
+describe! user_builder_tests {
+
+    it "should build a user correctly" {
+        use super::crypto::digest::Digest;
+        use super::crypto::md5::Md5;
+
+        let user = UserBuilder::new()
+            .id(1)
+            .name("Mr Fox")
+            .email("fox@mozilla.org")
+            .password("pass12345678")
+            .finalize()
+            .unwrap();
+
+        assert_eq!(user.id, Some(1));
+        assert_eq!(user.name, "Mr Fox");
+        assert_eq!(user.email, "fox@mozilla.org");
+        let mut md5 = Md5::new();
+        md5.input_str("pass12345678");
+        assert_eq!(user.password, md5.result_str());
+    }
+
+    failing "should panic if invalid user" {
+        let _user = UserBuilder::new()
+            .name("")
+            .finalize()
+            .unwrap();
+    }
+}
+
+describe! user_db_tests {
+    before_each {
+        let usersDb = UsersDb::new();
+
+        let defaultUsers = vec![
+            UserBuilder::new().id(1).name("User1")
+                .email("user1@mozilla.org").password("password1").finalize().unwrap(),
+            UserBuilder::new().id(2).name("User2")
+                .email("user2@mozilla.org").password("password2").finalize().unwrap(),
+            UserBuilder::new().id(3).name("User3")
+                .email("user3@mozilla.org").password("password3").finalize().unwrap(),
+        ];
+
+        for user in &defaultUsers {
+            usersDb.create(user).unwrap();
+        }
+
+        // Check integrity
+        match usersDb.read() {
+            Ok(users) => assert_eq!(users.len(), _users.len),
+            Err(err) => panic!("Error reading database {}", err),
+        }
+    }
+
+    it "should read users from db" {
+        let usersInDb = usersDb.read().unwrap();
+        assert_eq!(usersInDb.len(), defaultUsers.len());
+
+        for i in 0..usersInDb.len() {
+            assert_eq!(usersInDb[i], defaultUsers[i]);
+        }
+    }
+
+    it "should delete users correctly" {
+        usersDb.delete(1).unwrap();
+        let usersInDb = usersDb.read().unwrap();
+        assert_eq!(usersInDb.len(), defaultUsers.len() -1);
+
+        assert_eq!(usersInDb, &defaultUsers[1..]);
+    }
+
+    it "should update users correctly" {
+        let mut user = defaultUsers[0].clone();
+        user.name = "New Name".to_string();
+
+        usersDb.update(user.id.unwrap(), &user).unwrap();
+
+        let users = usersDb.read().unwrap();
+
+        assert_eq!(user, users[0]);
     }
 }

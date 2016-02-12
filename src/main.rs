@@ -38,7 +38,7 @@ fn main() {
     match db.read() {
         Ok(users) => {
             println!("Users {:?}", users);
-            db.delete(users[0].id.unwrap());
+            db.delete(users[0].id.unwrap()).unwrap();
         },
         Err(err) => println!("Crap {}", err)
     }
