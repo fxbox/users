@@ -83,7 +83,6 @@ pub struct UsersRouter;
 
 impl UsersRouter {
     fn not_implemented(_: &mut Request) -> IronResult<Response> {
-        println!("Not implemented");
         Ok(Response::with(status::NotImplemented))
     }
 
@@ -119,24 +118,8 @@ impl UsersRouter {
 
 #[test]
 fn test_cors_allowed_endpoints() {
-    use std::net::ToSocketAddrs;
-    use self::iron::{method, TypeMap, Url};
-
-    // Stub request
-    fn request<'a, 'b>(method: &Method, path: &str) -> Request<'a, 'b> {
-        let path = "http://localhost:3000/".to_string() + path;
-        Request {
-            url: Url::parse(&path).unwrap(),
-            remote_addr:
-                "localhost:3000".to_socket_addrs().unwrap().next().unwrap(),
-            local_addr:
-                "localhost:3000".to_socket_addrs().unwrap().next().unwrap(),
-            headers: headers::Headers::new(),
-            body: unsafe { ::std::mem::uninitialized() },
-            method: method.clone(),
-            extensions: TypeMap::new()
-        }
-    }
+    use self::iron::method;
+    use super::stubs::*;
 
     // Test that all CORS allowed endpoints get the appropriate CORS headers.
     for endpoint in CORS::ENDPOINTS {
@@ -165,5 +148,40 @@ fn test_cors_allowed_endpoints() {
             assert!(!headers.has::<headers::AccessControlAllowMethods>());
         },
         _ => assert!(false)
+    }
+}
+
+#[test]
+fn test_users_router_not_implemented_endpoints() {
+    use self::iron::middleware::Handler;
+    use self::iron::status::Status;
+    use super::stubs::*;
+
+    let router = UsersRouter::new();
+
+    const ENDPOINTS: &'static[Endpoint] = &[
+        (Method::Post,      &["setup"]),
+        (Method::Post,      &["invitations"]),
+        (Method::Get,       &["invitations"]),
+        (Method::Delete,    &["invitations"]),
+        (Method::Post,      &["users"]),
+        (Method::Get,       &["users"]),
+        (Method::Put,       &["users", "*"]),
+        (Method::Post,      &["users", "*"]),
+        (Method::Post,      &["recoveries", "*"]),
+        (Method::Get,       &["recoveries", "*", "*"]),
+        (Method::Get,       &["permissions"]),
+        (Method::Get,       &["permissions", "*"]),
+        (Method::Get,       &["permissions", "*", "*"]),
+        (Method::Get,       &["permissions", "_", "*"]),
+        (Method::Put,       &["permissions", "*", "*"]),
+    ];
+
+    for endpoint in ENDPOINTS {
+        let (ref method, path) = *endpoint;
+        let path = path.join("/").replace("*", "foo");
+        let mut req = request(method, &path);
+        let res = Handler::handle(&router, &mut req);
+        assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
     }
 }
