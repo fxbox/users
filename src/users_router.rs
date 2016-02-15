@@ -124,7 +124,10 @@ impl UsersRouter {
 
         let db = UsersDb::new();
         match db.create(&admin) {
-            Ok(_) => Ok(Response::with(status::Ok)),
+            Ok(_) => {
+                println!("USER WRITEN {:?}", db.read().unwrap().len());
+                Ok(Response::with(status::Ok))
+            },
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -266,5 +269,37 @@ describe! routes_tests {
             };
             assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
         }
+    }
+}
+
+describe! setup_tests {
+    before_each {
+        use iron::Headers;
+        use iron::status::Status;
+        use iron_test::request;
+
+        use users_db::UsersDb;
+
+        let router = UsersRouter::new();
+    }
+
+    it "should respond 200 OK and create user for a proper POST /setup" {
+        let usersDb = UsersDb::new();
+        assert_eq!(usersDb.read().unwrap().len(), 0);
+
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"email\": \"u@d\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::Ok);
+                assert_eq!(usersDb.read().unwrap().len(), 1);
+            },
+            Err(err) => {
+                println!("{:?}", err);
+                assert!(false);
+            }
+        };
     }
 }
