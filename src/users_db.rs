@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate crypto;
-extern crate libc;
-extern crate rusqlite;
-
-use self::crypto::digest::Digest;
-use self::crypto::md5::Md5;
-use self::libc::{c_int};
-use self::rusqlite::Connection;
+use crypto::digest::Digest;
+use crypto::md5::Md5;
+use libc::{c_int};
+use rusqlite::{self, Connection};
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct User {
@@ -28,11 +24,18 @@ pub struct UserBuilder {
     error: Option<UserBuilderError>
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UserBuilderError {
-    InvalidUsername,
+    EmptyEmail,
+    EmptyUsername,
     InvalidEmail,
     InvalidPassword
+}
+
+#[derive(Debug)]
+pub struct UserWithError {
+    pub user: User,
+    pub error: UserBuilderError
 }
 
 impl UserBuilder {
@@ -55,7 +58,7 @@ impl UserBuilder {
 
     pub fn name(&mut self, name: &str) -> &mut UserBuilder {
         if name.is_empty() {
-            self.error = Some(UserBuilderError::InvalidUsername);
+            self.error = Some(UserBuilderError::EmptyUsername);
             return self;
         }
         self.name = name.to_string();
@@ -64,7 +67,7 @@ impl UserBuilder {
 
     pub fn email(&mut self, email: &str) -> &mut UserBuilder {
         if email.is_empty() {
-            self.error = Some(UserBuilderError::InvalidEmail);
+            self.error = Some(UserBuilderError::EmptyEmail);
             return self;
         }
         let parts: Vec<&str> = email.rsplitn(2, '@').collect();
@@ -87,9 +90,17 @@ impl UserBuilder {
         self
     }
 
-    pub fn finalize(&self) -> Result<User, UserBuilderError> {
+    pub fn finalize(&self) -> Result<User, UserWithError> {
         match self.error {
-            Some(ref error) => Err(error.clone()),
+            Some(ref error) => Err(UserWithError{
+                user: User {
+                    id: self.id,
+                    name: self.name.clone(),
+                    email: self.email.clone(),
+                    password: self.password.clone()
+                },
+                error: error.clone()
+            }),
             None => Ok(User {
                 id: self.id,
                 name: self.name.clone(),
@@ -101,6 +112,9 @@ impl UserBuilder {
 }
 
 pub struct UsersDb {
+    // rusqlite::Connection already implements the Drop trait for the
+    // inner connection so we don't need to manually close it. It will
+    // be closed when the UsersDb instances go out of scope.
     connection: Connection
 }
 
@@ -119,8 +133,8 @@ impl UsersDb {
         let connection = Connection::open(get_db_environment()).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                email       TEXT NOT NULL,
+                name        TEXT NOT NULL UNIQUE,
+                email       TEXT NOT NULL UNIQUE,
                 password    TEXT NOT NULL
             )", &[]).unwrap();
 
@@ -163,10 +177,9 @@ impl UsersDb {
 }
 
 describe! user_builder_tests {
-
     it "should build a user correctly" {
-        use super::crypto::digest::Digest;
-        use super::crypto::md5::Md5;
+        use crypto::digest::Digest;
+        use crypto::md5::Md5;
 
         let user = UserBuilder::new()
             .id(1)

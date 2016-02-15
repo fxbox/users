@@ -2,16 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate unicase;
-extern crate iron;
-extern crate router;
+use super::users_db::{UserBuilder, UsersDb};
+use super::errors::*;
 
-use self::iron::{AfterMiddleware, headers, status};
-use self::iron::method::Method;
-use self::iron::method::Method::*;
-use self::iron::prelude::*;
-use self::router::Router;
-use self::unicase::UniCase;
+use iron::{AfterMiddleware, headers, status};
+use iron::method::Method;
+use iron::method::Method::*;
+use iron::prelude::*;
+use router::Router;
+use rustc_serialize::json;
+use unicase::UniCase;
+
+use std::io::Read;
 
 type Endpoint = (Method, &'static[&'static str]);
 
@@ -46,7 +48,8 @@ impl AfterMiddleware for CORS {
         let mut is_cors_endpoint = false;
         for endpoint in CORS::ENDPOINTS {
             let (ref method, path) = *endpoint;
-            if req.method != *method {
+            if req.method != *method &&
+               req.method != Method::Options {
                 continue;
             }
             if path.len() != req.url.path.len() {
@@ -86,10 +89,55 @@ impl UsersRouter {
         Ok(Response::with(status::NotImplemented))
     }
 
-    pub fn new() -> iron::middleware::Chain {
+    fn setup(req: &mut Request) -> IronResult<Response> {
+        #[derive(RustcDecodable, Debug)]
+        struct SetupBody {
+            username: String,
+            email: String,
+            password: String
+        }
+
+        let mut payload = String::new();
+        req.body.read_to_string(&mut payload).unwrap();
+        let body: SetupBody = match json::decode(&payload) {
+            Ok(body) => body,
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
+            }
+        };
+
+        let admin = match UserBuilder::new()
+            .name(&body.username)
+            .email(&body.email)
+            .password(&body.password)
+            .finalize() {
+                Ok(user) => user,
+                Err(error) => {
+                    println!("{:?}", error);
+                    return EndpointError::new(
+                        status::BadRequest,
+                        400
+                    );
+                }
+            };
+
+        let db = UsersDb::new();
+        match db.create(&admin) {
+            Ok(_) => {
+                Ok(Response::with(status::Ok))
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
+    }
+
+    pub fn new() -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
-        router.post("/setup", UsersRouter::not_implemented);
+        router.post("/setup", UsersRouter::setup);
 
         router.post("/invitations", UsersRouter::not_implemented);
         router.get("/invitations", UsersRouter::not_implemented);
@@ -116,72 +164,174 @@ impl UsersRouter {
     }
 }
 
-#[test]
-fn test_cors_allowed_endpoints() {
-    use self::iron::method;
-    use super::stubs::*;
+describe! cors_tests {
+    before_each {
+        use iron::{headers, Headers};
+        use iron_test::request;
 
-    // Test that all CORS allowed endpoints get the appropriate CORS headers.
-    for endpoint in CORS::ENDPOINTS {
-        let (ref method, path) = *endpoint;
-        let path = path.join("/").replace("*", "foo");
-        let mut req = request(method, &path);
-        match CORS.after(&mut req, Response::new()) {
-            Ok(res) => {
-                let headers = &res.headers;
-                assert!(headers.has::<headers::AccessControlAllowOrigin>());
-                assert!(headers.has::<headers::AccessControlAllowHeaders>());
-                assert!(headers.has::<headers::AccessControlAllowMethods>());
-            },
-            _ => assert!(false)
+        let router = UsersRouter::new();
+    }
+
+    it "should get the appropriate CORS headers" {
+        use super::CORS;
+
+        for endpoint in CORS::ENDPOINTS {
+            let (_, path) = *endpoint;
+            let path = "http://localhost:3000/".to_string() +
+                       &(path.join("/").replace("*", "foo"));
+            match request::options(&path, Headers::new(), &router) {
+                Ok(res) => {
+                    let headers = &res.headers;
+                    assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                    assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                    assert!(headers.has::<headers::AccessControlAllowMethods>());
+                },
+                _ => {
+                    assert!(false)
+                }
+            }
         }
     }
 
-    // Test that non-CORS-allowed endpoints like POST /setup don't get CORS
-    // headers in the response.
-    let mut req = request(&method::Post, "/setup");
-    match CORS.after(&mut req, Response::new()) {
-        Ok(res) => {
-            let headers = &res.headers;
-            assert!(!headers.has::<headers::AccessControlAllowOrigin>());
-            assert!(!headers.has::<headers::AccessControlAllowHeaders>());
-            assert!(!headers.has::<headers::AccessControlAllowMethods>());
-        },
-        _ => assert!(false)
+    it "should not get CORS headers" {
+        match request::options("http://localhost:3000/setup", Headers::new(),
+                               &router) {
+            Ok(res) => {
+                let headers = &res.headers;
+                assert!(!headers.has::<headers::AccessControlAllowOrigin>());
+                assert!(!headers.has::<headers::AccessControlAllowHeaders>());
+                assert!(!headers.has::<headers::AccessControlAllowMethods>());
+            },
+            _ => {
+                assert!(false)
+            }
+        }
     }
 }
 
-#[test]
-fn test_users_router_not_implemented_endpoints() {
-    use self::iron::middleware::Handler;
-    use self::iron::status::Status;
-    use super::stubs::*;
+describe! routes_tests {
+    before_each {
+        use iron::Headers;
+        use iron::method::Method;
+        use iron::status::Status;
+        use iron_test::request;
 
-    let router = UsersRouter::new();
+        use super::Endpoint;
 
-    const ENDPOINTS: &'static[Endpoint] = &[
-        (Method::Post,      &["setup"]),
-        (Method::Post,      &["invitations"]),
-        (Method::Get,       &["invitations"]),
-        (Method::Delete,    &["invitations"]),
-        (Method::Post,      &["users"]),
-        (Method::Get,       &["users"]),
-        (Method::Put,       &["users", "*"]),
-        (Method::Post,      &["users", "*"]),
-        (Method::Post,      &["recoveries", "*"]),
-        (Method::Get,       &["recoveries", "*", "*"]),
-        (Method::Get,       &["permissions"]),
-        (Method::Get,       &["permissions", "*"]),
-        (Method::Get,       &["permissions", "*", "*"]),
-        (Method::Get,       &["permissions", "_", "*"]),
-        (Method::Put,       &["permissions", "*", "*"]),
-    ];
+        let router = UsersRouter::new();
 
-    for endpoint in ENDPOINTS {
-        let (ref method, path) = *endpoint;
-        let path = path.join("/").replace("*", "foo");
-        let mut req = request(method, &path);
-        let res = Handler::handle(&router, &mut req);
-        assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
+    }
+
+    it "should respond with 501 not implemented" {
+        const ENDPOINTS: &'static[Endpoint] = &[
+            (Method::Post,      &["invitations"]),
+            (Method::Get,       &["invitations"]),
+            (Method::Delete,    &["invitations"]),
+            (Method::Post,      &["users"]),
+            (Method::Get,       &["users"]),
+            (Method::Put,       &["users", "*"]),
+            (Method::Post,      &["users", "*"]),
+            (Method::Post,      &["recoveries", "*"]),
+            (Method::Get,       &["recoveries", "*", "*"]),
+            (Method::Get,       &["permissions"]),
+            (Method::Get,       &["permissions", "*"]),
+            (Method::Get,       &["permissions", "*", "*"]),
+            (Method::Get,       &["permissions", "_", "*"]),
+            (Method::Put,       &["permissions", "*", "*"]),
+        ];
+
+        for endpoint in ENDPOINTS {
+            let (ref method, path) = *endpoint;
+            let path = "http://localhost:3000/".to_string() +
+                       &(path.join("/").replace("*", "foo"));
+
+            let res = match *method {
+                Method::Get => {
+                    request::get(&path, Headers::new(), &router)
+                },
+                Method::Post => {
+                    request::post(&path, Headers::new(), "", &router)
+                },
+                Method::Delete => {
+                    request::delete(&path, Headers::new(), &router)
+                },
+                Method::Put => {
+                    request::put(&path, Headers::new(), "", &router)
+                },
+                _ => {
+                    assert!(false);
+                    request::get(&path, Headers::new(), &router)
+                }
+            };
+            assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
+        }
+    }
+}
+
+describe! setup_tests {
+    before_each {
+        use iron::Headers;
+        use iron::status::Status;
+        use iron_test::request;
+
+        let router = UsersRouter::new();
+    }
+
+    it "should respond 200 OK for a proper POST /setup" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"email\": \"u@d\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::Ok);
+            },
+            Err(err) => {
+                println!("{:?}", err);
+                assert!(false);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if username is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"email\": \"u@d\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if email is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if password is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"email\": \"u@d\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            }
+        };
     }
 }
