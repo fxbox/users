@@ -125,7 +125,6 @@ impl UsersRouter {
         let db = UsersDb::new();
         match db.create(&admin) {
             Ok(_) => {
-                println!("USER WRITEN {:?}", db.read().unwrap().len());
                 Ok(Response::with(status::Ok))
             },
             Err(error) => {
@@ -260,9 +259,6 @@ describe! routes_tests {
                     request::put(&path, Headers::new(), "", &router)
                 },
                 _ => {
-                    // Should never get here but still we need to give a
-                    // request to make rust happy. Life is hard for the
-                    // rust padawan.
                     assert!(false);
                     request::get(&path, Headers::new(), &router)
                 }
@@ -278,15 +274,10 @@ describe! setup_tests {
         use iron::status::Status;
         use iron_test::request;
 
-        use users_db::UsersDb;
-
         let router = UsersRouter::new();
     }
 
-    it "should respond 200 OK and create user for a proper POST /setup" {
-        let usersDb = UsersDb::new();
-        assert_eq!(usersDb.read().unwrap().len(), 0);
-
+    it "should respond 200 OK for a proper POST /setup" {
         match request::post("http://localhost:3000/setup", Headers::new(),
                             "{\"username\": \"u\",
                               \"email\": \"u@d\",
@@ -294,11 +285,52 @@ describe! setup_tests {
                             &router) {
             Ok(res) => {
                 assert_eq!(res.status.unwrap(), Status::Ok);
-                assert_eq!(usersDb.read().unwrap().len(), 1);
             },
             Err(err) => {
                 println!("{:?}", err);
                 assert!(false);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if username is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"email\": \"u@d\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if email is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            }
+        };
+    }
+
+    it "should respond 400 BadRequest if password is missing" {
+        match request::post("http://localhost:3000/setup", Headers::new(),
+                            "{\"username\": \"u\",
+                              \"email\": \"u@d\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
             }
         };
     }
