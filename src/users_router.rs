@@ -13,7 +13,6 @@ use router::Router;
 use rustc_serialize::json;
 use unicase::UniCase;
 
-use std::error::Error;
 use std::io::Read;
 
 type Endpoint = (Method, &'static[&'static str]);
@@ -162,75 +161,80 @@ impl UsersRouter {
     }
 }
 
-#[test]
-fn test_cors_allowed_endpoints() {
-    use iron::method;
-    use super::stubs::*;
+describe! cors_tests {
+    before_each {
+        use iron::{AfterMiddleware, headers, method};
+        use iron::prelude::*;
+        use stubs::*;
+        use super::CORS;
+    }
 
-    // Test that all CORS allowed endpoints get the appropriate CORS headers.
-    for endpoint in CORS::ENDPOINTS {
-        let (ref method, path) = *endpoint;
-        let path = path.join("/").replace("*", "foo");
-        let mut req = request(method, &path);
+    it "should get the appropriate CORS headers" {
+        for endpoint in CORS::ENDPOINTS {
+            let (ref method, path) = *endpoint;
+            let path = path.join("/").replace("*", "foo");
+            let mut req = request(method, &path);
+            match CORS.after(&mut req, Response::new()) {
+                Ok(res) => {
+                    let headers = &res.headers;
+                    assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                    assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                    assert!(headers.has::<headers::AccessControlAllowMethods>());
+                },
+                _ => assert!(false)
+            }
+        }
+    }
+
+    it "should not get CORS headers" {
+        let mut req = request(&method::Post, "/setup");
         match CORS.after(&mut req, Response::new()) {
             Ok(res) => {
                 let headers = &res.headers;
-                assert!(headers.has::<headers::AccessControlAllowOrigin>());
-                assert!(headers.has::<headers::AccessControlAllowHeaders>());
-                assert!(headers.has::<headers::AccessControlAllowMethods>());
+                assert!(!headers.has::<headers::AccessControlAllowOrigin>());
+                assert!(!headers.has::<headers::AccessControlAllowHeaders>());
+                assert!(!headers.has::<headers::AccessControlAllowMethods>());
             },
             _ => assert!(false)
         }
     }
-
-    // Test that non-CORS-allowed endpoints like POST /setup don't get CORS
-    // headers in the response.
-    let mut req = request(&method::Post, "/setup");
-    match CORS.after(&mut req, Response::new()) {
-        Ok(res) => {
-            let headers = &res.headers;
-            assert!(!headers.has::<headers::AccessControlAllowOrigin>());
-            assert!(!headers.has::<headers::AccessControlAllowHeaders>());
-            assert!(!headers.has::<headers::AccessControlAllowMethods>());
-        },
-        _ => assert!(false)
-    }
 }
 
-#[test]
-fn test_users_router_not_implemented_endpoints() {
-    use iron::middleware::Handler;
-    use iron::status::Status;
-    use super::stubs::*;
+describe! routes_tests {
+    before_each {
+        use iron::method::Method;
+        use iron::middleware::Handler;
+        use iron::status::Status;
+        use stubs::*;
 
-    let router = UsersRouter::new();
-
-    const ENDPOINTS: &'static[Endpoint] = &[
-        (Method::Post,      &["invitations"]),
-        (Method::Get,       &["invitations"]),
-        (Method::Delete,    &["invitations"]),
-        (Method::Post,      &["users"]),
-        (Method::Get,       &["users"]),
-        (Method::Put,       &["users", "*"]),
-        (Method::Post,      &["users", "*"]),
-        (Method::Post,      &["recoveries", "*"]),
-        (Method::Get,       &["recoveries", "*", "*"]),
-        (Method::Get,       &["permissions"]),
-        (Method::Get,       &["permissions", "*"]),
-        (Method::Get,       &["permissions", "*", "*"]),
-        (Method::Get,       &["permissions", "_", "*"]),
-        (Method::Put,       &["permissions", "*", "*"]),
-    ];
-
-    for endpoint in ENDPOINTS {
-        let (ref method, path) = *endpoint;
-        let path = path.join("/").replace("*", "foo");
-        let res = Handler::handle(&router, &mut request(method, &path));
-        assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
+        use super::Endpoint;
     }
-}
 
-#[test]
-fn test_setup_endpoint() {
-    assert!(true);
+    it "should respond with 501 not implemented" {
+        let router = UsersRouter::new();
+
+        const ENDPOINTS: &'static[Endpoint] = &[
+            (Method::Post,      &["invitations"]),
+            (Method::Get,       &["invitations"]),
+            (Method::Delete,    &["invitations"]),
+            (Method::Post,      &["users"]),
+            (Method::Get,       &["users"]),
+            (Method::Put,       &["users", "*"]),
+            (Method::Post,      &["users", "*"]),
+            (Method::Post,      &["recoveries", "*"]),
+            (Method::Get,       &["recoveries", "*", "*"]),
+            (Method::Get,       &["permissions"]),
+            (Method::Get,       &["permissions", "*"]),
+            (Method::Get,       &["permissions", "*", "*"]),
+            (Method::Get,       &["permissions", "_", "*"]),
+            (Method::Put,       &["permissions", "*", "*"]),
+        ];
+
+        for endpoint in ENDPOINTS {
+            let (ref method, path) = *endpoint;
+            let path = path.join("/").replace("*", "foo");
+            let res = Handler::handle(&router, &mut request(method, &path));
+            assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
+        }
+    }
 }

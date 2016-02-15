@@ -50,7 +50,6 @@ impl EndpointError {
     }
 }
 
-
 pub fn from_decoder_error(error: json::DecoderError) -> IronResult<Response> {
     match error {
         json::DecoderError::MissingFieldError(field) => {

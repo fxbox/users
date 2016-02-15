@@ -177,7 +177,6 @@ impl UsersDb {
 }
 
 describe! user_builder_tests {
-
     it "should build a user correctly" {
         use crypto::digest::Digest;
         use crypto::md5::Md5;
