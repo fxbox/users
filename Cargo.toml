@@ -5,6 +5,7 @@ authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>"]
 
 [dependencies]
 iron = "*"
+iron-test = "*"
 libc = "*"
 router = "*"
 rustc-serialize = "*"

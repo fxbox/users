@@ -21,4 +21,4 @@ pub mod users_router;
 mod errors;
 
 #[cfg(test)]
-mod stubs;
+extern crate iron_test;

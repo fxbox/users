@@ -48,7 +48,8 @@ impl AfterMiddleware for CORS {
         let mut is_cors_endpoint = false;
         for endpoint in CORS::ENDPOINTS {
             let (ref method, path) = *endpoint;
-            if req.method != *method {
+            if req.method != *method &&
+               req.method != Method::Options {
                 continue;
             }
             if path.len() != req.url.path.len() {
@@ -163,56 +164,63 @@ impl UsersRouter {
 
 describe! cors_tests {
     before_each {
-        use iron::{AfterMiddleware, headers, method};
-        use iron::prelude::*;
-        use stubs::*;
-        use super::CORS;
+        use iron::{headers, Headers};
+        use iron_test::request;
+
+        let router = UsersRouter::new();
     }
 
     it "should get the appropriate CORS headers" {
+        use super::CORS;
+
         for endpoint in CORS::ENDPOINTS {
-            let (ref method, path) = *endpoint;
-            let path = path.join("/").replace("*", "foo");
-            let mut req = request(method, &path);
-            match CORS.after(&mut req, Response::new()) {
+            let (_, path) = *endpoint;
+            let path = "http://localhost:3000/".to_string() +
+                       &(path.join("/").replace("*", "foo"));
+            match request::options(&path, Headers::new(), &router) {
                 Ok(res) => {
                     let headers = &res.headers;
                     assert!(headers.has::<headers::AccessControlAllowOrigin>());
                     assert!(headers.has::<headers::AccessControlAllowHeaders>());
                     assert!(headers.has::<headers::AccessControlAllowMethods>());
                 },
-                _ => assert!(false)
+                _ => {
+                    assert!(false)
+                }
             }
         }
     }
 
     it "should not get CORS headers" {
-        let mut req = request(&method::Post, "/setup");
-        match CORS.after(&mut req, Response::new()) {
+        match request::options("http://localhost:3000/setup", Headers::new(),
+                               &router) {
             Ok(res) => {
                 let headers = &res.headers;
                 assert!(!headers.has::<headers::AccessControlAllowOrigin>());
                 assert!(!headers.has::<headers::AccessControlAllowHeaders>());
                 assert!(!headers.has::<headers::AccessControlAllowMethods>());
             },
-            _ => assert!(false)
+            _ => {
+                assert!(false)
+            }
         }
     }
 }
 
 describe! routes_tests {
     before_each {
+        use iron::Headers;
         use iron::method::Method;
-        use iron::middleware::Handler;
         use iron::status::Status;
-        use stubs::*;
+        use iron_test::request;
 
         use super::Endpoint;
+
+        let router = UsersRouter::new();
+
     }
 
     it "should respond with 501 not implemented" {
-        let router = UsersRouter::new();
-
         const ENDPOINTS: &'static[Endpoint] = &[
             (Method::Post,      &["invitations"]),
             (Method::Get,       &["invitations"]),
@@ -232,8 +240,30 @@ describe! routes_tests {
 
         for endpoint in ENDPOINTS {
             let (ref method, path) = *endpoint;
-            let path = path.join("/").replace("*", "foo");
-            let res = Handler::handle(&router, &mut request(method, &path));
+            let path = "http://localhost:3000/".to_string() +
+                       &(path.join("/").replace("*", "foo"));
+
+            let res = match *method {
+                Method::Get => {
+                    request::get(&path, Headers::new(), &router)
+                },
+                Method::Post => {
+                    request::post(&path, Headers::new(), "", &router)
+                },
+                Method::Delete => {
+                    request::delete(&path, Headers::new(), &router)
+                },
+                Method::Put => {
+                    request::put(&path, Headers::new(), "", &router)
+                },
+                _ => {
+                    // Should never get here but still we need to give a
+                    // request to make rust happy. Life is hard for the
+                    // rust padawan.
+                    assert!(false);
+                    request::get(&path, Headers::new(), &router)
+                }
+            };
             assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
         }
     }
