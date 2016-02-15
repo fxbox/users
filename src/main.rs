@@ -8,7 +8,7 @@ extern crate foxbox_users;
 extern crate iron;
 extern crate router;
 
-use foxbox_users::users_db::{UserBuilder, UsersDb};
+use foxbox_users::users_db::{ReadFilter, UserBuilder, UsersDb};
 use foxbox_users::users_router::UsersRouter;
 use iron::prelude::*;
 
@@ -26,7 +26,7 @@ fn main() {
         Ok(_) => println!("Yay!"),
         Err(err) => println!("Crap {}", err)
     }
-    match db.read() {
+    match db.read(ReadFilter::All) {
         Ok(users) => {
             println!("Users {:?}", users);
             let mut user = users[0].clone();
@@ -35,14 +35,14 @@ fn main() {
         },
         Err(err) => println!("Crap {}", err)
     }
-    match db.read() {
+    match db.read(ReadFilter::All) {
         Ok(users) => {
             println!("Users {:?}", users);
             db.delete(users[0].id.unwrap()).unwrap();
         },
         Err(err) => println!("Crap {}", err)
     }
-    match db.read() {
+    match db.read(ReadFilter::All) {
         Ok(users) => println!("Users {:?}", users),
         Err(err) => println!("Crap {}", err)
     }
