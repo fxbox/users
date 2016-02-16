@@ -133,7 +133,7 @@ pub struct UsersDb {
 
 #[cfg(test)]
 fn get_db_environment() -> String {
-    ":memory:".to_string()
+    "./users_db_test.sqlite".to_string()
 }
 
 #[cfg(not(test))]
@@ -154,6 +154,14 @@ impl UsersDb {
         UsersDb {
             connection: connection
         }
+    }
+
+    pub fn clear(&self) -> rusqlite::Result<()> {
+        self.connection.execute_batch(
+            "DELETE FROM users;
+             DELETE FROM SQLITE_SEQUENCE WHERE name='users';
+             VACUUM;"
+        )
     }
 
     pub fn create(&self, user: &User) -> rusqlite::Result<c_int> {
@@ -257,6 +265,7 @@ describe! user_builder_tests {
 describe! user_db_tests {
     before_each {
         let usersDb = UsersDb::new();
+        usersDb.clear();
 
         let defaultUsers = vec![
             UserBuilder::new().id(1).name("User1")

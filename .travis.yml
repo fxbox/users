@@ -1,6 +1,8 @@
 language: rust
 rust:
     - nightly-2016-02-11
-
+env:
+    global:
+        - RUST_TEST_THREADS=1
 script:
     - RUST_BACKTRACE=1 cargo test
