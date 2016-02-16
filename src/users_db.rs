@@ -361,6 +361,11 @@ describe! user_db_tests {
         ).unwrap();
         assert_eq!(users.len(), 0);
 
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz\\' OR \\'1\\'=\\'1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
         let users = usersDb.read(ReadFilter::Credentials(
             "1\' OR \'1\' = \'1\'))/*".to_string(), "foo".to_string()
         )).unwrap();
