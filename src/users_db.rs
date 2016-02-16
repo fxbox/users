@@ -38,6 +38,11 @@ pub struct UserWithError {
     pub error: UserBuilderError
 }
 
+fn escape(string: &str) -> String {
+    // http://www.sqlite.org/faq.html#q14
+    string.replace("'", "''")
+}
+
 impl UserBuilder {
     const MIN_PASS_LEN: usize = 8;
 
@@ -61,7 +66,7 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::EmptyUsername);
             return self;
         }
-        self.name = name.to_string();
+        self.name = escape(name);
         self
     }
 
@@ -75,7 +80,7 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::InvalidEmail);
             return self;
         }
-        self.email = email.to_string();
+        self.email = escape(email);
         self
     }
 
@@ -85,7 +90,7 @@ impl UserBuilder {
             return self;
         }
         let mut md5 = Md5::new();
-        md5.input_str(password);
+        md5.input_str(&escape(password));
         self.password = md5.result_str();
         self
     }
@@ -109,6 +114,14 @@ impl UserBuilder {
             })
         }
     }
+}
+
+pub enum ReadFilter {
+    All,
+    Id(i32),
+    Name(String),
+    Email(String),
+    Credentials(String, String)
 }
 
 pub struct UsersDb {
@@ -150,9 +163,45 @@ impl UsersDb {
         )
     }
 
-    pub fn read(&self) -> rusqlite::Result<Vec<User>> {
-        let mut stmt = try!(self.connection.prepare("SELECT * FROM users"));
-        let rows = try!(stmt.query(&[]));
+    pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
+        let mut stmt = try!(
+            self.connection.prepare("SELECT * FROM users")
+        );
+
+        let rows = match filter {
+            ReadFilter::All => {
+                try!(stmt.query(&[]))
+            },
+            ReadFilter::Id(id) => {
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE id=$1")
+                );
+                try!(stmt.query(&[&id]))
+            },
+            ReadFilter::Name(name) => {
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE name=$1")
+                );
+                try!(stmt.query(&[&escape(&name)]))
+            },
+            ReadFilter::Email(email) => {
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE email=$1")
+                );
+                try!(stmt.query(&[&escape(&email)]))
+            },
+            ReadFilter::Credentials(user, password) => {
+                let mut md5 = Md5::new();
+                md5.input_str(&escape(&password));
+                let password = md5.result_str();
+                stmt = try!(
+                    self.connection.prepare(
+                        "SELECT * FROM users WHERE (name=$1 OR email=$2) AND (password=$3)"
+                    )
+                );
+                try!(stmt.query(&[&escape(&user), &escape(&user), &password]))
+            }
+        };
         let mut users = Vec::new();
         for result_row in rows {
             let row = try!(result_row);
@@ -230,7 +279,7 @@ describe! user_db_tests {
     }
 
     it "should read users from db" {
-        let usersInDb = usersDb.read().unwrap();
+        let usersInDb = usersDb.read(ReadFilter::All).unwrap();
         assert_eq!(usersInDb.len(), defaultUsers.len());
 
         for i in 0..usersInDb.len() {
@@ -238,9 +287,71 @@ describe! user_db_tests {
         }
     }
 
+    it "should read user by id" {
+        for i in 0..defaultUsers.len() {
+            let users = usersDb.read(
+                ReadFilter::Id(defaultUsers[i].id.unwrap())).unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].id, defaultUsers[i].id);
+            assert_eq!(users[0].name, defaultUsers[i].name);
+            assert_eq!(users[0].email, defaultUsers[i].email);
+            assert_eq!(users[0].password, defaultUsers[i].password);
+        }
+    }
+
+    it "should read user by name" {
+        for i in 0..defaultUsers.len() {
+            let users = usersDb.read(
+                ReadFilter::Name(defaultUsers[i].name.clone())).unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].id, defaultUsers[i].id);
+            assert_eq!(users[0].name, defaultUsers[i].name);
+            assert_eq!(users[0].email, defaultUsers[i].email);
+            assert_eq!(users[0].password, defaultUsers[i].password);
+        }
+    }
+
+    it "should read user by email" {
+        for i in 0..defaultUsers.len() {
+            let users = usersDb.read(
+                ReadFilter::Email(defaultUsers[i].email.clone())).unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].id, defaultUsers[i].id);
+            assert_eq!(users[0].name, defaultUsers[i].name);
+            assert_eq!(users[0].email, defaultUsers[i].email);
+            assert_eq!(users[0].password, defaultUsers[i].password);
+        }
+    }
+
+    it "should read user by name or email with name" {
+        for i in 0..defaultUsers.len() {
+            let users = usersDb.read(ReadFilter::Credentials(
+                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+            ).unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].id, defaultUsers[i].id);
+            assert_eq!(users[0].name, defaultUsers[i].name);
+            assert_eq!(users[0].email, defaultUsers[i].email);
+            assert_eq!(users[0].password, defaultUsers[i].password);
+        }
+    }
+
+    it "should read user by name or email with email" {
+        for i in 0..defaultUsers.len() {
+            let users = usersDb.read(ReadFilter::Credentials(
+                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+            ).unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].id, defaultUsers[i].id);
+            assert_eq!(users[0].name, defaultUsers[i].name);
+            assert_eq!(users[0].email, defaultUsers[i].email);
+            assert_eq!(users[0].password, defaultUsers[i].password);
+        }
+    }
+
     it "should delete users correctly" {
         usersDb.delete(1).unwrap();
-        let usersInDb = usersDb.read().unwrap();
+        let usersInDb = usersDb.read(ReadFilter::All).unwrap();
         assert_eq!(usersInDb.len(), defaultUsers.len() -1);
 
         assert_eq!(usersInDb, &defaultUsers[1..]);
@@ -252,8 +363,30 @@ describe! user_db_tests {
 
         usersDb.update(user.id.unwrap(), &user).unwrap();
 
-        let users = usersDb.read().unwrap();
+        let users = usersDb.read(ReadFilter::All).unwrap();
 
         assert_eq!(user, users[0]);
+    }
+
+    it "should not retrieve any records" {
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz' OR '1'='1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz\' OR \'1\'=\'1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz\\' OR \\'1\\'=\\'1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
+        let users = usersDb.read(ReadFilter::Credentials(
+            "1\' OR \'1\' = \'1\'))/*".to_string(), "foo".to_string()
+        )).unwrap();
+        assert_eq!(users.len(), 0);
     }
 }
