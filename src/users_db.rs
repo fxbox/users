@@ -164,31 +164,44 @@ impl UsersDb {
     }
 
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
-        let filter = match filter {
-            ReadFilter::All => "".to_string(),
+        let mut stmt = try!(
+            self.connection.prepare("SELECT * FROM users")
+        );
+
+        let rows = match filter {
+            ReadFilter::All => {
+                try!(stmt.query(&[]))
+            },
             ReadFilter::Id(id) => {
-                format!("WHERE id={}", id)
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE id=$1")
+                );
+                try!(stmt.query(&[&id]))
             },
             ReadFilter::Name(name) => {
-                format!("WHERE name='{}'", escape(&name))
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE name=$1")
+                );
+                try!(stmt.query(&[&escape(&name)]))
             },
             ReadFilter::Email(email) => {
-                format!("WHERE email='{}'", escape(&email))
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users WHERE email=$1")
+                );
+                try!(stmt.query(&[&escape(&email)]))
             },
-            ReadFilter::Credentials(mut user, mut password) => {
-                user = escape(&user);
-                password = escape(&password);
+            ReadFilter::Credentials(user, password) => {
                 let mut md5 = Md5::new();
-                md5.input_str(&password);
+                md5.input_str(&escape(&password));
                 let password = md5.result_str();
-                format!("WHERE (name='{}' OR email = '{}') AND (password='{}')",
-                        user, user, password)
+                stmt = try!(
+                    self.connection.prepare(
+                        "SELECT * FROM users WHERE (name=$1 OR email=$2) AND (password=$3)"
+                    )
+                );
+                try!(stmt.query(&[&escape(&user), &escape(&user), &password]))
             }
         };
-
-        let query = format!("SELECT * FROM users {}", filter);
-        let mut stmt = try!(self.connection.prepare(&query));
-        let rows = try!(stmt.query(&[]));
         let mut users = Vec::new();
         for result_row in rows {
             let row = try!(result_row);
@@ -356,6 +369,11 @@ describe! user_db_tests {
     }
 
     it "should not retrieve any records" {
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz' OR '1'='1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
         let users = usersDb.read(ReadFilter::Name(
             "Xyz\' OR \'1\'=\'1".to_string())
         ).unwrap();
