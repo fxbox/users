@@ -129,7 +129,7 @@ impl UsersRouter {
                 Ok(user) => user,
                 Err(error) => {
                     println!("{:?}", error);
-                    return EndpointError::new(
+                    return EndpointError::new_with_response(
                         status::BadRequest,
                         400
                     );

@@ -35,7 +35,8 @@ pub struct ErrorBody {
 pub struct EndpointError;
 
 impl EndpointError {
-    pub fn new(status: status::Status, errno: u16) -> IronResult<Response> {
+    pub fn new_with_response(status: status::Status, errno: u16)
+        -> IronResult<Response> {
         let error = status.canonical_reason().unwrap().to_string();
         let body = ErrorBody {
             code: status.to_u16(),
@@ -48,6 +49,21 @@ impl EndpointError {
             (status, json::encode(&body).unwrap()))
         )
     }
+
+    pub fn new(status: status::Status, errno: u16) -> IronResult<()> {
+        let error = status.canonical_reason().unwrap().to_string();
+        let body = ErrorBody {
+            code: status.to_u16(),
+            errno: errno,
+            error: error.clone()
+        };
+
+        Err(
+            IronError::new(StringError(error),
+            (status, json::encode(&body).unwrap()))
+        )
+    }
+
 }
 
 pub fn from_decoder_error(error: json::DecoderError) -> IronResult<Response> {
@@ -59,9 +75,9 @@ pub fn from_decoder_error(error: json::DecoderError) -> IronResult<Response> {
                 "password" => 102,
                 _ => 400
             };
-            EndpointError::new(status::BadRequest, errno)
+            EndpointError::new_with_response(status::BadRequest, errno)
         },
-        _ => EndpointError::new(status::BadRequest, 400)
+        _ => EndpointError::new_with_response(status::BadRequest, 400)
     }
 }
 
@@ -71,10 +87,12 @@ pub fn from_sqlite_error(error: rusqlite_error) -> IronResult<Response> {
             match error.unwrap().as_ref() {
                 "UNIQUE constraint failed: users.email" |
                 "UNIQUE constraint failed: users.username" =>
-                    EndpointError::new(status::Conflict, 409),
-                _ => EndpointError::new(status::InternalServerError, 501)
+                    EndpointError::new_with_response(status::Conflict, 409),
+                _ => EndpointError::new_with_response(
+                    status::InternalServerError, 501
+                )
             }
         }
-        _ => EndpointError::new(status::InternalServerError, 501)
+        _ => EndpointError::new_with_response(status::InternalServerError, 501)
     }
 }
