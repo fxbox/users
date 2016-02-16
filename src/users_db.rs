@@ -38,6 +38,11 @@ pub struct UserWithError {
     pub error: UserBuilderError
 }
 
+fn escape(string: &str) -> String {
+    // http://www.sqlite.org/faq.html#q14
+    string.replace("'", "''")
+}
+
 impl UserBuilder {
     const MIN_PASS_LEN: usize = 8;
 
@@ -61,7 +66,7 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::EmptyUsername);
             return self;
         }
-        self.name = name.to_string();
+        self.name = escape(name);
         self
     }
 
@@ -75,7 +80,7 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::InvalidEmail);
             return self;
         }
-        self.email = email.to_string();
+        self.email = escape(email);
         self
     }
 
@@ -85,7 +90,7 @@ impl UserBuilder {
             return self;
         }
         let mut md5 = Md5::new();
-        md5.input_str(password);
+        md5.input_str(&escape(password));
         self.password = md5.result_str();
         self
     }
@@ -161,10 +166,18 @@ impl UsersDb {
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
         let filter = match filter {
             ReadFilter::All => "".to_string(),
-            ReadFilter::Id(id) => format!("WHERE id={}", id),
-            ReadFilter::Name(name) => format!("WHERE name='{}'", name),
-            ReadFilter::Email(email) => format!("WHERE email='{}'", email),
-            ReadFilter::Credentials(user, password) => {
+            ReadFilter::Id(id) => {
+                format!("WHERE id={}", id)
+            },
+            ReadFilter::Name(name) => {
+                format!("WHERE name='{}'", escape(&name))
+            },
+            ReadFilter::Email(email) => {
+                format!("WHERE email='{}'", escape(&email))
+            },
+            ReadFilter::Credentials(mut user, mut password) => {
+                user = escape(&user);
+                password = escape(&password);
                 let mut md5 = Md5::new();
                 md5.input_str(&password);
                 let password = md5.result_str();
@@ -340,5 +353,17 @@ describe! user_db_tests {
         let users = usersDb.read(ReadFilter::All).unwrap();
 
         assert_eq!(user, users[0]);
+    }
+
+    it "should not retrieve any records" {
+        let users = usersDb.read(ReadFilter::Name(
+            "Xyz\' OR \'1\'=\'1".to_string())
+        ).unwrap();
+        assert_eq!(users.len(), 0);
+
+        let users = usersDb.read(ReadFilter::Credentials(
+            "1\' OR \'1\' = \'1\'))/*".to_string(), "foo".to_string()
+        )).unwrap();
+        assert_eq!(users.len(), 0);
     }
 }
