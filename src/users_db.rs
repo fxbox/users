@@ -116,7 +116,7 @@ pub enum ReadFilter {
     Id(i32),
     Name(String),
     Email(String),
-    NameOrEmailAndPassword(String, String)
+    Credentials(String, String)
 }
 
 pub struct UsersDb {
@@ -164,7 +164,7 @@ impl UsersDb {
             ReadFilter::Id(id) => format!("WHERE id={}", id),
             ReadFilter::Name(name) => format!("WHERE name='{}'", name),
             ReadFilter::Email(email) => format!("WHERE email='{}'", email),
-            ReadFilter::NameOrEmailAndPassword(user, password) => {
+            ReadFilter::Credentials(user, password) => {
                 let mut md5 = Md5::new();
                 md5.input_str(&password);
                 let password = md5.result_str();
@@ -299,8 +299,9 @@ describe! user_db_tests {
 
     it "should read user by name or email with name" {
         for i in 0..defaultUsers.len() {
-            let users = usersDb.read(ReadFilter::NameOrEmailAndPassword(
-                defaultUsers[i].name.clone(), format!("password{}", i + 1))).unwrap();
+            let users = usersDb.read(ReadFilter::Credentials(
+                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+            ).unwrap();
             assert_eq!(users.len(), 1);
             assert_eq!(users[0].id, defaultUsers[i].id);
             assert_eq!(users[0].name, defaultUsers[i].name);
@@ -311,8 +312,9 @@ describe! user_db_tests {
 
     it "should read user by name or email with email" {
         for i in 0..defaultUsers.len() {
-            let users = usersDb.read(ReadFilter::NameOrEmailAndPassword(
-                defaultUsers[i].name.clone(), format!("password{}", i + 1))).unwrap();
+            let users = usersDb.read(ReadFilter::Credentials(
+                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+            ).unwrap();
             assert_eq!(users.len(), 1);
             assert_eq!(users[0].id, defaultUsers[i].id);
             assert_eq!(users[0].name, defaultUsers[i].name);
