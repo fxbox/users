@@ -3,5 +3,4 @@ rust:
     - nightly-2016-02-11
 
 script:
-    - cargo build # Linter is also executed here
     - RUST_BACKTRACE=1 cargo test
