@@ -49,6 +49,6 @@ fn main() {
     }
     let router = UsersRouter::new();
     let mut chain = Chain::new(router);
-    chain.link_before(AuthMiddleware);
+    chain.around(AuthMiddleware);
     Iron::new(chain).http("localhost:3000").unwrap();
 }

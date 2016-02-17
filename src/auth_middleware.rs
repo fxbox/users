@@ -4,22 +4,33 @@
 
 use super::errors::*;
 
-use iron::{BeforeMiddleware, headers, status};
+use iron::{AroundMiddleware, Handler, headers, status};
 use iron::prelude::*;
 
-pub struct AuthMiddleware;
+struct AuthHandler<H: Handler> { handler: H }
 
-impl BeforeMiddleware for AuthMiddleware {
-    fn before(&self, req: &mut Request) -> IronResult<()> {
+impl<H: Handler> Handler for AuthHandler<H> {
+    fn handle(&self, req: &mut Request) -> IronResult<Response> {
         match req.headers.get::<headers::Authorization<headers::Bearer>>() {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
                 // XXX validate token once /login flow and JWT module are done.
                 println!("{}", token);
-                Ok(())
             },
             _ => {
-                EndpointError::new(status::Unauthorized, 401)
+                return EndpointError::new(status::Unauthorized, 401)
             }
-        }
+        };
+
+        self.handler.handle(req)
+    }
+}
+
+pub struct AuthMiddleware;
+
+impl AroundMiddleware for AuthMiddleware {
+    fn around(self, handler: Box<Handler>) -> Box<Handler> {
+        Box::new(AuthHandler {
+            handler: handler
+        }) as Box<Handler>
     }
 }
