@@ -335,3 +335,127 @@ describe! setup_tests {
         };
     }
 }
+
+
+describe! login_tests {
+    before_each {
+        use super::super::users_db::{UsersDb, UserBuilder};
+        use iron::prelude::Response;
+        use iron::Headers;
+        use iron::headers::{Authorization, Basic};
+        use iron::status::Status;
+        use iron_test::request;
+        use iron_test::response::extract_body_to_string;
+        use rustc_serialize::json::{self, Json};
+
+        fn extract_body_to_json(response: Response) -> Result<Json, json::BuilderError> {
+            let body = extract_body_to_string(response);
+            Json::from_str(&body)
+        }
+
+        let router = UsersRouter::new();
+        let usersDb = UsersDb::new();
+        usersDb.clear();
+        usersDb.create(&UserBuilder::new()
+                   .id(1).name("username")
+                   .password("password")
+                   .email("username@example.com")
+                   .secret("secret")
+                   .finalize().unwrap()
+        );
+
+    }
+
+    it "should respond with a 400 Bad Request for requests missing username" {
+        let invalid_credentials = Authorization(Basic {
+            username: "".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post("http://localhost:3000/", headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 400 Bad Request for requests missing password" {
+        let invalid_credentials = Authorization(Basic {
+            username: "username".to_owned(),
+            password: Some("".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post("http://localhost:3000/", headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 400 Bad Request for requests missing the authorization password" {
+        let mut headers = Headers::new();
+
+        if let Err(error) = request::post(endpoint, headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 401 Unauthorized for invalid credentials" {
+        let invalid_credentials = Authorization(Basic {
+            username: "johndoe".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post("http://localhost:3000/", headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::Unauthorized);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
+        // According with https://jwt.io/ valid token for
+        // header = { alg: "HS256", typ: "JWT" },
+        // claims = { id: 1, name: "username" },
+        // secret = "secret" and signature algorithm "HS256"
+        let valid_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc";
+        let valid_credentials = Authorization(Basic {
+            username: "username".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(valid_credentials);
+
+        if let Ok(response) = request::post("http://localhost:3000/", headers, "", &router) {
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::Created);
+            let json = extract_body_to_json(response).unwrap();
+            let session_token = json.find("session_token").and_then(|value| value.as_string());
+            assert_eq!(session_token, Some(valid_token));
+        } else {
+            assert!(false);
+        }
+    }
+}
