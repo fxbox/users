@@ -108,7 +108,11 @@ impl UserBuilder {
         self
     }
 
-    pub fn finalize(&self) -> Result<User, UserWithError> {
+    pub fn finalize(&mut self) -> Result<User, UserWithError> {
+        use rand;
+        if self.secret.is_empty() {
+            self.secret(&rand::random::<i32>().to_string());
+        }
         match self.error {
             Some(ref error) => Err(UserWithError{
                 user: User {
@@ -271,6 +275,27 @@ describe! user_builder_tests {
         md5.input_str("pass12345678");
         assert_eq!(user.password, md5.result_str());
         assert_eq!(user.secret, "secret");
+    }
+
+    it "should provide a secret event if not explicitly set" {
+        use crypto::digest::Digest;
+        use crypto::md5::Md5;
+
+        let user = UserBuilder::new()
+            .id(1)
+            .name("Mr Fox")
+            .email("fox@mozilla.org")
+            .password("pass12345678")
+            .finalize()
+            .unwrap();
+
+        assert_eq!(user.id, Some(1));
+        assert_eq!(user.name, "Mr Fox");
+        assert_eq!(user.email, "fox@mozilla.org");
+        let mut md5 = Md5::new();
+        md5.input_str("pass12345678");
+        assert_eq!(user.password, md5.result_str());
+        assert!(!user.secret.is_empty());
     }
 
     failing "should panic if invalid user" {
