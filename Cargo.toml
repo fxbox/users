@@ -1,7 +1,7 @@
 [package]
 name = "foxbox_users"
 version = "0.1.0"
-authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>"]
+authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Puente González <salva@unoyunodiez.com"]
 
 [dependencies]
 iron = "*"
