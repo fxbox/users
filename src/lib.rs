@@ -14,6 +14,7 @@ extern crate router;
 extern crate rustc_serialize;
 extern crate rusqlite;
 extern crate unicase;
+extern crate jwt;
 extern crate rand;
 
 pub mod users_db;
