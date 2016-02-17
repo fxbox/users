@@ -150,7 +150,7 @@ impl UsersRouter {
 
     /// Returns Some pair of valid credentials if both username and password are provided or None elsewhere.
     fn credentials_from_header(auth: &Authorization<Basic>) -> Option<Credentials> {
-        let &Authorization(Basic { username: ref username, password: ref maybe_password }) = auth;
+        let &Authorization(Basic { ref username, password: ref maybe_password }) = auth;
         let something_is_missed = username.is_empty() || match *maybe_password {
             None => true,
             Some(ref psw) => psw.is_empty()
@@ -177,7 +177,7 @@ impl UsersRouter {
                     return EndpointError::new(status::Unauthorized, 401);
                 }
 
-                let User{ id: id, name: ref name, secret: ref secret, .. } = users[0];
+                let User{ id, ref name, ref secret, .. } = users[0];
                 let jwt_header: jwt::Header = Default::default();
                 let claims = SessionClaims {
                     id: id.unwrap(),
@@ -407,33 +407,31 @@ describe! login_tests {
         use super::super::users_db::{UsersDb, UserBuilder};
         use iron::prelude::Response;
         use iron::Headers;
+        #[allow(unused_imports)]
         use iron::headers::{Authorization, Basic};
         use iron::status::Status;
         use iron_test::request;
         use iron_test::response::extract_body_to_string;
         use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, Json, DecodeResult};
+        use rustc_serialize::json::{self, DecodeResult};
+        #[allow(unused_imports)]
         use super::super::errors::{ErrorBody};
 
-        fn extract_body_to_json(response: Response) -> Result<Json, json::BuilderError> {
-            let body = extract_body_to_string(response);
-            Json::from_str(&body)
-        }
-
+        #[allow(dead_code)]
         fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
             json::decode(&extract_body_to_string(response))
         }
 
         let router = UsersRouter::new();
         let usersDb = UsersDb::new();
-        usersDb.clear();
+        usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()
                    .id(1).name("username")
                    .password("password")
                    .email("username@example.com")
                    .secret("secret")
                    .finalize().unwrap()
-        );
+        ).ok();
         let endpoint = "http://localhost:3000/login";
     }
 
@@ -476,7 +474,7 @@ describe! login_tests {
     }
 
     it "should respond with a 400 Bad Request for requests missing the authorization password" {
-        let mut headers = Headers::new();
+        let headers = Headers::new();
 
         if let Err(error) = request::post(endpoint, headers, "", &router) {
             let response = error.response;

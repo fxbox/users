@@ -309,7 +309,7 @@ describe! user_builder_tests {
 describe! user_db_tests {
     before_each {
         let usersDb = UsersDb::new();
-        usersDb.clear();
+        usersDb.clear().ok();
 
         let defaultUsers = vec![
             UserBuilder::new().id(1).name("User1")
