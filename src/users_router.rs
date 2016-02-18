@@ -424,8 +424,7 @@ describe! login_tests {
                    .password("password")
                    .email("username@example.com")
                    .secret("secret")
-                   .finalize().unwrap()
-        ).ok();
+                   .finalize().unwrap()).ok();
         let endpoint = "http://localhost:3000/login";
     }
 

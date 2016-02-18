@@ -95,3 +95,87 @@ impl AroundMiddleware for AuthMiddleware {
         }) as Box<Handler>
     }
 }
+
+describe! auth_middleware_tests {
+    before_each {
+        use iron::headers::Headers;
+        use iron::prelude::*;
+        use iron::method::Method;
+        use iron::status::Status;
+        use iron_test::request;
+        use router::Router;
+
+        fn not_implemented(_: &mut Request) -> IronResult<Response> {
+            Ok(Response::with(Status::NotImplemented))
+        }
+
+        let mut router = Router::new();
+        router.get("/authenticated", not_implemented);
+        router.get("/not_authenticated", not_implemented);
+
+        let mut chain = Chain::new(router);
+        chain.around(AuthMiddleware {
+            auth_endpoints: vec![
+                AuthEndpoint(Method::Get, vec!["authenticated".to_string()])
+            ]
+        });
+    }
+
+    it "should allow request to not authenticated endpoint" {
+        match request::get("http://localhost:3000/not_authenticated",
+                           Headers::new(), &chain) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        }
+    }
+
+    it "should reject request to authenticated endpoint" {
+        match request::get("http://localhost:3000/authenticated",
+                           Headers::new(), &chain) {
+            Ok(_) => assert!(false),
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+            }
+        }
+    }
+
+    it "should allow request to authenticated endpoint" {
+        use super::super::users_db::{UserBuilder, UsersDb};
+
+        use iron::headers::{Authorization, Bearer};
+        use crypto::sha2::Sha256;
+        use jwt;
+
+        let db = UsersDb::new();
+        db.clear().ok();
+        let user = UserBuilder::new()
+            .id(1).name("username")
+            .password("password")
+            .email("username@example.com")
+            .secret("secret")
+            .finalize().unwrap();
+        db.create(&user).ok();
+        let jwt_header: jwt::Header = Default::default();
+        let claims = SessionClaims {
+            id: user.id.unwrap(),
+            name: user.name.to_owned(),
+            ..Default::default()
+        };
+        let token = jwt::Token::new(jwt_header, claims);
+        let signed = token.signed(
+            user.secret.to_owned().as_bytes(),
+            Sha256::new()
+        ).ok().unwrap();
+        let mut headers = Headers::new();
+        headers.set(Authorization(Bearer { token: signed.to_owned() }));
+        match request::get("http://localhost:3000/authenticated",
+                           headers, &chain) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        }
+    }
+}
