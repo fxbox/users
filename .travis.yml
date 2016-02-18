@@ -1,6 +1,6 @@
 language: rust
 rust:
-    - nightly-2016-02-11
+    - nightly-2016-02-13
 env:
     global:
         - RUST_TEST_THREADS=1
