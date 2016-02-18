@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use super::auth_middleware::SessionClaims;
 use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 use super::errors::*;
 
@@ -84,12 +85,6 @@ impl AfterMiddleware for CORS {
 }
 
 type Credentials = (String, String);
-
-#[derive(Default, RustcDecodable, RustcEncodable)]
-pub struct SessionClaims{
-    id: i32,
-    name: String
-}
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct LoginResponse {
@@ -400,7 +395,6 @@ describe! setup_tests {
         };
     }
 }
-
 
 describe! login_tests {
     before_each {
