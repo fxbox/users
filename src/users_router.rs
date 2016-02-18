@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use super::users_db::{UserBuilder, UsersDb};
+use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 use super::errors::*;
 
 use iron::{AfterMiddleware, headers, status};
+use iron::headers::{Authorization, Basic};
 use iron::method::Method;
 use iron::method::Method::*;
 use iron::prelude::*;
@@ -82,6 +83,19 @@ impl AfterMiddleware for CORS {
     }
 }
 
+type Credentials = (String, String);
+
+#[derive(Default, RustcDecodable, RustcEncodable)]
+pub struct SessionClaims{
+    id: i32,
+    name: String
+}
+
+#[derive(Debug, RustcDecodable, RustcEncodable)]
+struct LoginResponse {
+    session_token: String
+}
+
 pub struct UsersRouter;
 
 impl UsersRouter {
@@ -134,10 +148,61 @@ impl UsersRouter {
         }
     }
 
+    /// Returns Some pair of valid credentials if both username and password are provided or None elsewhere.
+    fn credentials_from_header(auth: &Authorization<Basic>) -> Option<Credentials> {
+        let &Authorization(Basic { ref username, password: ref maybe_password }) = auth;
+        let something_is_missed = username.is_empty() || match *maybe_password {
+            None => true,
+            Some(ref psw) => psw.is_empty()
+        };
+        if something_is_missed {
+            None
+        } else {
+            Some((username.to_owned(), maybe_password.as_ref().unwrap().to_owned()))
+        }
+    }
+
+    fn login(req: &mut Request) -> IronResult<Response> {
+        use std::default::Default;
+        use crypto::sha2::Sha256;
+        use jwt;
+
+        let error103 = EndpointError::new(status::BadRequest, 103);
+        let header: Option<&Authorization<Basic>> = req.headers.get();
+        if let Some(authorization) = header {
+            if let Some((username, password)) = UsersRouter::credentials_from_header(authorization) {
+                let users_db = UsersDb::new();
+                let users = users_db.read(ReadFilter::Credentials(username, password)).unwrap();
+                if users.len() != 1 {
+                    return EndpointError::new(status::Unauthorized, 401);
+                }
+
+                let User{ id, ref name, ref secret, .. } = users[0];
+                let jwt_header: jwt::Header = Default::default();
+                let claims = SessionClaims {
+                    id: id.unwrap(),
+                    name: name.to_owned(),
+                    ..Default::default()
+                };
+                let token = jwt::Token::new(jwt_header, claims);
+                let signed = token.signed(secret.to_owned().as_bytes(), Sha256::new()).ok().unwrap();
+                let body_obj = LoginResponse{
+                   session_token: signed
+                };
+                Ok(Response::with((status::Created, json::encode(&body_obj).unwrap())))
+            } else {
+                error103
+            }
+        } else {
+            error103
+        }
+    }
+
     pub fn new() -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
         router.post("/setup", UsersRouter::setup);
+        router.post("/login", UsersRouter::login);
 
         router.post("/invitations", UsersRouter::not_implemented);
         router.get("/invitations", UsersRouter::not_implemented);
@@ -333,5 +398,133 @@ describe! setup_tests {
                 assert_eq!(err.response.status.unwrap(), Status::BadRequest);
             }
         };
+    }
+}
+
+
+describe! login_tests {
+    before_each {
+        use super::super::users_db::{UsersDb, UserBuilder};
+        use iron::prelude::Response;
+        use iron::Headers;
+        #[allow(unused_imports)]
+        use iron::headers::{Authorization, Basic};
+        use iron::status::Status;
+        use iron_test::request;
+        use iron_test::response::extract_body_to_string;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+        #[allow(unused_imports)]
+        use super::super::errors::{ErrorBody};
+
+        #[allow(dead_code)]
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            json::decode(&extract_body_to_string(response))
+        }
+
+        let router = UsersRouter::new();
+        let usersDb = UsersDb::new();
+        usersDb.clear().ok();
+        usersDb.create(&UserBuilder::new()
+                   .id(1).name("username")
+                   .password("password")
+                   .email("username@example.com")
+                   .secret("secret")
+                   .finalize().unwrap()
+        ).ok();
+        let endpoint = "http://localhost:3000/login";
+    }
+
+    it "should respond with a generic 400 Bad Request for requests missing username" {
+        let invalid_credentials = Authorization(Basic {
+            username: "".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post(endpoint, headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a generic 400 Bad Request for requests missing password" {
+        let invalid_credentials = Authorization(Basic {
+            username: "username".to_owned(),
+            password: Some("".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post(endpoint, headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 400 Bad Request for requests missing the authorization password" {
+        let headers = Headers::new();
+
+        if let Err(error) = request::post(endpoint, headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::BadRequest);
+            let json = extract_body_to::<ErrorBody>(response).unwrap();
+            assert_eq!(json.errno, 103);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 401 Unauthorized for invalid credentials" {
+        let invalid_credentials = Authorization(Basic {
+            username: "johndoe".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(invalid_credentials);
+
+        if let Err(error) = request::post(endpoint, headers, "", &router) {
+            let response = error.response;
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::Unauthorized);
+        } else {
+            assert!(false);
+        }
+    }
+
+    it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
+        use jwt;
+        use super::{LoginResponse, SessionClaims};
+
+        let valid_credentials = Authorization(Basic {
+            username: "username".to_owned(),
+            password: Some("password".to_owned())
+        });
+        let mut headers = Headers::new();
+        headers.set(valid_credentials);
+
+        if let Ok(response) = request::post(endpoint, headers, "", &router) {
+            assert!(response.status.is_some());
+            assert_eq!(response.status.unwrap(), Status::Created);
+            let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
+            let token = body_obj.session_token;
+            let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token).ok().unwrap().claims;
+            assert_eq!(claims.id, 1);
+            assert_eq!(claims.name, "username");
+        } else {
+            assert!(false);
+        }
     }
 }

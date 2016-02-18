@@ -68,6 +68,7 @@ The currently-defined error responses are:
 
 * Setup
     * [POST /setup](#post-setup)
+    * [POST /login](#post-login)
 
 ## POST /setup
 Allow to initiate the box by registering an admin user. **Once the admin user is created, this route will be removed**.
@@ -100,3 +101,34 @@ Failing requests may be due to the following errors:
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
 * status code 400, errno 400: Bad request.
 * status code 409, errno 409: Already exists.
+
+## POST /login
+Authenticates a user.
+### Request
+Requests must include a [basic authorization header](https://en.wikipedia.org/wiki/Basic_access_authentication#Client_side) with `username:password` encoded in Base64 according to [FC2617](http://www.ietf.org/rfc/rfc2617.txt)
+```ssh
+POST /setup/ HTTP/1.1
+Content-Type: application/json
+Authorization: Basic QWxhZGRpbjpPcGVuU2VzYW1l
+```
+### Response
+Successful requests will produce a "201 Created" response with a session token in the form of a [JWT](https://jwt.io/introduction/) with the following data:
+```js
+{
+    "id": 1,
+    "name": "username"
+}
+```
+The token is provided in the body of the response:
+```ssh
+HTTP/1.1 201 OK
+Connection: close
+{
+  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
+}
+```
+
+Failing requests may be due to the following errors:
+* status code 400, errno 103: Missing or malformed authentication header.
+* status code 400, errno 400: Bad request.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.

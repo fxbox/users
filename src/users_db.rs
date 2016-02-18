@@ -12,7 +12,8 @@ pub struct User {
     pub id: Option<i32>,
     pub name: String,
     pub email: String,
-    pub password: String
+    pub password: String,
+    pub secret: String
 }
 
 #[derive(Debug)]
@@ -21,6 +22,7 @@ pub struct UserBuilder {
     name: String,
     email: String,
     password: String,
+    secret: String,
     error: Option<UserBuilderError>
 }
 
@@ -28,6 +30,7 @@ pub struct UserBuilder {
 pub enum UserBuilderError {
     EmptyEmail,
     EmptyUsername,
+    EmptySecret,
     InvalidEmail,
     InvalidPassword
 }
@@ -52,6 +55,7 @@ impl UserBuilder {
             name: "".to_string(),
             email: "".to_string(),
             password: "".to_string(),
+            secret: "".to_string(),
             error: None
         }
     }
@@ -95,14 +99,28 @@ impl UserBuilder {
         self
     }
 
-    pub fn finalize(&self) -> Result<User, UserWithError> {
+    pub fn secret(&mut self, secret: &str) -> &mut UserBuilder {
+        if secret.is_empty()  {
+            self.error = Some(UserBuilderError::EmptySecret);
+            return self;
+        }
+        self.secret = secret.to_owned();
+        self
+    }
+
+    pub fn finalize(&mut self) -> Result<User, UserWithError> {
+        use rand;
+        if self.secret.is_empty() {
+            self.secret(&rand::random::<i32>().to_string());
+        }
         match self.error {
             Some(ref error) => Err(UserWithError{
                 user: User {
                     id: self.id,
                     name: self.name.clone(),
                     email: self.email.clone(),
-                    password: self.password.clone()
+                    password: self.password.clone(),
+                    secret: self.secret.to_owned()
                 },
                 error: error.clone()
             }),
@@ -110,7 +128,8 @@ impl UserBuilder {
                 id: self.id,
                 name: self.name.clone(),
                 email: self.email.clone(),
-                password: self.password.clone()
+                password: self.password.clone(),
+                secret: self.secret.to_owned()
             })
         }
     }
@@ -133,7 +152,7 @@ pub struct UsersDb {
 
 #[cfg(test)]
 fn get_db_environment() -> String {
-    ":memory:".to_string()
+    "./users_db_test.sqlite".to_string()
 }
 
 #[cfg(not(test))]
@@ -148,7 +167,8 @@ impl UsersDb {
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL UNIQUE,
                 email       TEXT NOT NULL UNIQUE,
-                password    TEXT NOT NULL
+                password    TEXT NOT NULL,
+                secret      TEXT NOT NULL
             )", &[]).unwrap();
 
         UsersDb {
@@ -156,10 +176,18 @@ impl UsersDb {
         }
     }
 
+    pub fn clear(&self) -> rusqlite::Result<()> {
+        self.connection.execute_batch(
+            "DELETE FROM users;
+             DELETE FROM SQLITE_SEQUENCE WHERE name='users';
+             VACUUM;"
+        )
+    }
+
     pub fn create(&self, user: &User) -> rusqlite::Result<c_int> {
         self.connection.execute("INSERT INTO users
-            (name, email, password) VALUES ($1, $2, $3)",
-            &[&user.name, &user.email, &user.password]
+            (name, email, password, secret) VALUES ($1, $2, $3, $4)",
+            &[&user.name, &user.email, &user.password, &user.secret]
         )
     }
 
@@ -209,7 +237,8 @@ impl UsersDb {
                 id: row.get(0),
                 name: row.get(1),
                 email: row.get(2),
-                password: row.get(3)
+                password: row.get(3),
+                secret: row.get(4)
             });
         }
         Ok(users)
@@ -235,6 +264,7 @@ describe! user_builder_tests {
             .name("Mr Fox")
             .email("fox@mozilla.org")
             .password("pass12345678")
+            .secret("secret")
             .finalize()
             .unwrap();
 
@@ -244,6 +274,28 @@ describe! user_builder_tests {
         let mut md5 = Md5::new();
         md5.input_str("pass12345678");
         assert_eq!(user.password, md5.result_str());
+        assert_eq!(user.secret, "secret");
+    }
+
+    it "should provide a secret event if not explicitly set" {
+        use crypto::digest::Digest;
+        use crypto::md5::Md5;
+
+        let user = UserBuilder::new()
+            .id(1)
+            .name("Mr Fox")
+            .email("fox@mozilla.org")
+            .password("pass12345678")
+            .finalize()
+            .unwrap();
+
+        assert_eq!(user.id, Some(1));
+        assert_eq!(user.name, "Mr Fox");
+        assert_eq!(user.email, "fox@mozilla.org");
+        let mut md5 = Md5::new();
+        md5.input_str("pass12345678");
+        assert_eq!(user.password, md5.result_str());
+        assert!(!user.secret.is_empty());
     }
 
     failing "should panic if invalid user" {
@@ -257,14 +309,15 @@ describe! user_builder_tests {
 describe! user_db_tests {
     before_each {
         let usersDb = UsersDb::new();
+        usersDb.clear().ok();
 
         let defaultUsers = vec![
             UserBuilder::new().id(1).name("User1")
-                .email("user1@mozilla.org").password("password1").finalize().unwrap(),
+                .email("user1@mozilla.org").password("password1").secret("secret1").finalize().unwrap(),
             UserBuilder::new().id(2).name("User2")
-                .email("user2@mozilla.org").password("password2").finalize().unwrap(),
+                .email("user2@mozilla.org").password("password2").secret("secret2").finalize().unwrap(),
             UserBuilder::new().id(3).name("User3")
-                .email("user3@mozilla.org").password("password3").finalize().unwrap(),
+                .email("user3@mozilla.org").password("password3").secret("secret3").finalize().unwrap(),
         ];
 
         for user in &defaultUsers {
@@ -296,6 +349,7 @@ describe! user_db_tests {
             assert_eq!(users[0].name, defaultUsers[i].name);
             assert_eq!(users[0].email, defaultUsers[i].email);
             assert_eq!(users[0].password, defaultUsers[i].password);
+            assert_eq!(users[0].secret, defaultUsers[i].secret);
         }
     }
 
@@ -308,6 +362,7 @@ describe! user_db_tests {
             assert_eq!(users[0].name, defaultUsers[i].name);
             assert_eq!(users[0].email, defaultUsers[i].email);
             assert_eq!(users[0].password, defaultUsers[i].password);
+            assert_eq!(users[0].secret, defaultUsers[i].secret);
         }
     }
 
@@ -320,6 +375,7 @@ describe! user_db_tests {
             assert_eq!(users[0].name, defaultUsers[i].name);
             assert_eq!(users[0].email, defaultUsers[i].email);
             assert_eq!(users[0].password, defaultUsers[i].password);
+            assert_eq!(users[0].secret, defaultUsers[i].secret);
         }
     }
 
@@ -333,6 +389,7 @@ describe! user_db_tests {
             assert_eq!(users[0].name, defaultUsers[i].name);
             assert_eq!(users[0].email, defaultUsers[i].email);
             assert_eq!(users[0].password, defaultUsers[i].password);
+            assert_eq!(users[0].secret, defaultUsers[i].secret);
         }
     }
 
@@ -346,6 +403,7 @@ describe! user_db_tests {
             assert_eq!(users[0].name, defaultUsers[i].name);
             assert_eq!(users[0].email, defaultUsers[i].email);
             assert_eq!(users[0].password, defaultUsers[i].password);
+            assert_eq!(users[0].secret, defaultUsers[i].secret);
         }
     }
 
@@ -353,7 +411,6 @@ describe! user_db_tests {
         usersDb.delete(1).unwrap();
         let usersInDb = usersDb.read(ReadFilter::All).unwrap();
         assert_eq!(usersInDb.len(), defaultUsers.len() -1);
-
         assert_eq!(usersInDb, &defaultUsers[1..]);
     }
 

@@ -25,11 +25,11 @@ impl Error for StringError {
     }
 }
 
-#[derive(RustcEncodable)]
-struct ErrorBody {
-    code: u16,
-    errno: u16,
-    error: String
+#[derive(Debug, RustcDecodable, RustcEncodable)]
+pub struct ErrorBody {
+    pub code: u16,
+    pub errno: u16,
+    pub error: String
 }
 
 pub struct EndpointError;
