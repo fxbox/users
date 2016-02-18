@@ -500,7 +500,8 @@ describe! login_tests {
 
     it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
         use jwt;
-        use super::{LoginResponse, SessionClaims};
+        use super::LoginResponse;
+        use super::super::auth_middleware::SessionClaims;
 
         let valid_credentials = Authorization(Basic {
             username: "username".to_owned(),

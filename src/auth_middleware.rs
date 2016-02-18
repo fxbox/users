@@ -61,7 +61,6 @@ impl<H: Handler> Handler for AuthHandler<H> {
                     Ok(token) => token,
                     Err(_) => return EndpointError::new(status::Unauthorized, 401)
                 };
-
                 // To verify the token we need to get the secret associated to
                 // user id contained in the token claim.
                 let db = UsersDb::new();
@@ -80,7 +79,6 @@ impl<H: Handler> Handler for AuthHandler<H> {
             },
             _ => return EndpointError::new(status::Unauthorized, 401)
         };
-
         self.handler.handle(req)
     }
 }
