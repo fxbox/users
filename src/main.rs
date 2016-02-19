@@ -10,6 +10,7 @@ extern crate router;
 
 use foxbox_users::users_db::{ReadFilter, UserBuilder, UsersDb};
 use foxbox_users::users_router::UsersRouter;
+use foxbox_users::auth_middleware::AuthMiddleware;
 use iron::prelude::*;
 
 fn main() {
@@ -47,5 +48,9 @@ fn main() {
         Err(err) => println!("Crap {}", err)
     }
     let router = UsersRouter::new();
-    Iron::new(router).http("localhost:3000").unwrap();
+    let mut chain = Chain::new(router);
+    chain.around(AuthMiddleware{
+        auth_endpoints: vec![]
+    });
+    Iron::new(chain).http("localhost:3000").unwrap();
 }

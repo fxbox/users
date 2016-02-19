@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use super::auth_middleware::SessionClaims;
 use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 use super::errors::*;
 
@@ -84,12 +85,6 @@ impl AfterMiddleware for CORS {
 }
 
 type Credentials = (String, String);
-
-#[derive(Default, RustcDecodable, RustcEncodable)]
-pub struct SessionClaims{
-    id: i32,
-    name: String
-}
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct LoginResponse {
@@ -401,7 +396,6 @@ describe! setup_tests {
     }
 }
 
-
 describe! login_tests {
     before_each {
         use super::super::users_db::{UsersDb, UserBuilder};
@@ -430,8 +424,7 @@ describe! login_tests {
                    .password("password")
                    .email("username@example.com")
                    .secret("secret")
-                   .finalize().unwrap()
-        ).ok();
+                   .finalize().unwrap()).ok();
         let endpoint = "http://localhost:3000/login";
     }
 
@@ -506,7 +499,8 @@ describe! login_tests {
 
     it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
         use jwt;
-        use super::{LoginResponse, SessionClaims};
+        use super::LoginResponse;
+        use super::super::auth_middleware::SessionClaims;
 
         let valid_credentials = Authorization(Basic {
             username: "username".to_owned(),

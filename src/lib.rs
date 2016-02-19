@@ -19,6 +19,7 @@ extern crate rand;
 
 pub mod users_db;
 pub mod users_router;
+pub mod auth_middleware;
 
 mod errors;
 

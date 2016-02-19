@@ -35,7 +35,8 @@ pub struct ErrorBody {
 pub struct EndpointError;
 
 impl EndpointError {
-    pub fn new(status: status::Status, errno: u16) -> IronResult<Response> {
+    pub fn new(status: status::Status, errno: u16)
+        -> IronResult<Response> {
         let error = status.canonical_reason().unwrap().to_string();
         let body = ErrorBody {
             code: status.to_u16(),
@@ -72,7 +73,9 @@ pub fn from_sqlite_error(error: rusqlite_error) -> IronResult<Response> {
                 "UNIQUE constraint failed: users.email" |
                 "UNIQUE constraint failed: users.username" =>
                     EndpointError::new(status::Conflict, 409),
-                _ => EndpointError::new(status::InternalServerError, 501)
+                _ => EndpointError::new(
+                    status::InternalServerError, 501
+                )
             }
         }
         _ => EndpointError::new(status::InternalServerError, 501)
