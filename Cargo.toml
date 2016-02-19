@@ -12,6 +12,6 @@ rustc-serialize = "*"
 rusqlite = "*"
 rust-crypto = "*"
 unicase = "*"
-stainless = { git = "https://github.com/reem/stainless.git", rev = "82392f2e" }
+stainless = "0.1.4"
 jwt = "0.4.0"
 rand = "0.3.14"
