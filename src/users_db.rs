@@ -13,7 +13,8 @@ pub struct User {
     pub name: String,
     pub email: String,
     pub password: String,
-    pub secret: String
+    pub secret: String,
+    pub is_admin: Option<bool>
 }
 
 #[derive(Debug)]
@@ -23,7 +24,8 @@ pub struct UserBuilder {
     email: String,
     password: String,
     secret: String,
-    error: Option<UserBuilderError>
+    error: Option<UserBuilderError>,
+    is_admin: Option<bool>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,7 +58,8 @@ impl UserBuilder {
             email: "".to_string(),
             password: "".to_string(),
             secret: "".to_string(),
-            error: None
+            error: None,
+            is_admin: Some(false)
         }
     }
 
@@ -108,6 +111,11 @@ impl UserBuilder {
         self
     }
 
+    pub fn is_admin(&mut self, admin: bool) -> &mut UserBuilder {
+        self.is_admin = Some(admin);
+        self
+    }
+
     pub fn finalize(&mut self) -> Result<User, UserWithError> {
         use rand;
         if self.secret.is_empty() {
@@ -120,7 +128,8 @@ impl UserBuilder {
                     name: self.name.clone(),
                     email: self.email.clone(),
                     password: self.password.clone(),
-                    secret: self.secret.to_owned()
+                    secret: self.secret.to_owned(),
+                    is_admin: self.is_admin
                 },
                 error: error.clone()
             }),
@@ -129,7 +138,8 @@ impl UserBuilder {
                 name: self.name.clone(),
                 email: self.email.clone(),
                 password: self.password.clone(),
-                secret: self.secret.to_owned()
+                secret: self.secret.to_owned(),
+                is_admin: self.is_admin
             })
         }
     }
@@ -140,7 +150,8 @@ pub enum ReadFilter {
     Id(i32),
     Name(String),
     Email(String),
-    Credentials(String, String)
+    Credentials(String, String),
+    IsAdmin(bool)
 }
 
 pub struct UsersDb {
@@ -168,7 +179,8 @@ impl UsersDb {
                 name        TEXT NOT NULL UNIQUE,
                 email       TEXT NOT NULL UNIQUE,
                 password    TEXT NOT NULL,
-                secret      TEXT NOT NULL
+                secret      TEXT NOT NULL,
+                is_admin    BOOL NOT NULL DEFAULT 0
             )", &[]).unwrap();
 
         UsersDb {
@@ -186,8 +198,8 @@ impl UsersDb {
 
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
         match self.connection.execute("INSERT INTO users
-            (name, email, password, secret) VALUES ($1, $2, $3, $4)",
-            &[&user.name, &user.email, &user.password, &user.secret]
+            (name, email, password, secret, is_admin) VALUES ($1, $2, $3, $4, $5)",
+            &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin]
         ) {
             Ok(_) => {
                match self.read(ReadFilter::Name(user.name.to_owned())) {
@@ -236,6 +248,12 @@ impl UsersDb {
                     )
                 );
                 try!(stmt.query(&[&escape(&user), &escape(&user), &password]))
+            },
+            ReadFilter::IsAdmin(is_admin) => {
+                stmt = try!(
+                    self.connection.prepare("SELECT * FROM users where is_admin=$1")
+                );
+                try!(stmt.query(&[&is_admin]))
             }
         };
         let mut users = Vec::new();
@@ -246,15 +264,16 @@ impl UsersDb {
                 name: row.get(1),
                 email: row.get(2),
                 password: row.get(3),
-                secret: row.get(4)
+                secret: row.get(4),
+                is_admin: row.get(5)
             });
         }
         Ok(users)
     }
 
     pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
-        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3
-            WHERE id=$4", &[&user.name, &user.email, &user.password, &id])
+        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5
+            WHERE id=$6", &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin, &id])
     }
 
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
@@ -453,5 +472,24 @@ describe! user_db_tests {
             "1\' OR \'1\' = \'1\'))/*".to_string(), "foo".to_string()
         )).unwrap();
         assert_eq!(users.len(), 0);
+    }
+
+    it "should not create admin users by default" {
+        let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
+        assert_eq!(admins.len(), 0);
+    }
+
+    it "should create admin user when requested" {
+        let admin = UserBuilder::new().name("Admin")
+                .email("admin@mozilla.org")
+                .password("password!")
+                .is_admin(true)
+                .finalize().unwrap();
+        usersDb.create(&admin).unwrap();
+
+        let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
+
+        assert_eq!(admins.len(), 1);
+        assert_eq!(admins[0].name, admin.name);
     }
 }
