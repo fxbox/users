@@ -24,22 +24,9 @@ struct CORS;
 impl CORS {
     // Only endpoints listed here will allow CORS.
     // Endpoints containing a variable path part can use '*' like in:
-    // &["users", "*"]
+    // &["bar", "*"] for a URL like https://foo.com/bar/123
     pub const ENDPOINTS: &'static[Endpoint] = &[
-        (Method::Post,      &["invitations"]),
-        (Method::Get,       &["invitations"]),
-        (Method::Delete,    &["invitations"]),
-        (Method::Post,      &["users"]),
-        (Method::Get,       &["users"]),
-        (Method::Put,       &["users", "*"]),
-        (Method::Post,      &["users", "*"]),
-        (Method::Post,      &["recoveries", "*"]),
-        (Method::Get,       &["recoveries", "*", "*"]),
-        (Method::Get,       &["permissions"]),
-        (Method::Get,       &["permissions", "*"]),
-        (Method::Get,       &["permissions", "*", "*"]),
-        (Method::Get,       &["permissions", "_", "*"]),
-        (Method::Put,       &["permissions", "*", "*"]),
+        (Method::Post, &["login"])
     ];
 }
 
@@ -94,10 +81,6 @@ struct LoginResponse {
 pub struct UsersRouter;
 
 impl UsersRouter {
-    fn not_implemented(_: &mut Request) -> IronResult<Response> {
-        Ok(Response::with(status::NotImplemented))
-    }
-
     fn setup(req: &mut Request) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
@@ -199,24 +182,6 @@ impl UsersRouter {
         router.post("/setup", UsersRouter::setup);
         router.post("/login", UsersRouter::login);
 
-        router.post("/invitations", UsersRouter::not_implemented);
-        router.get("/invitations", UsersRouter::not_implemented);
-        router.delete("invitations", UsersRouter::not_implemented);
-
-        router.post("/users", UsersRouter::not_implemented);
-        router.get("/users", UsersRouter::not_implemented);
-        router.put("/users/:id", UsersRouter::not_implemented);
-        router.post("/users/:id", UsersRouter::not_implemented);
-
-        router.post("/recoveries/:user", UsersRouter::not_implemented);
-        router.get("/recoveries/:user/:id", UsersRouter::not_implemented);
-
-        router.get("/permissions", UsersRouter::not_implemented);
-        router.get("/permissions/:user", UsersRouter::not_implemented);
-        router.get("/permissions/:user/:taxon", UsersRouter::not_implemented);
-        router.get("/permissions/_/:taxon", UsersRouter::not_implemented);
-        router.put("/permissions/:user/:taxon", UsersRouter::not_implemented);
-
         let mut chain = Chain::new(router);
         chain.link_after(CORS);
 
@@ -265,65 +230,6 @@ describe! cors_tests {
             _ => {
                 assert!(false)
             }
-        }
-    }
-}
-
-describe! routes_tests {
-    before_each {
-        use iron::Headers;
-        use iron::method::Method;
-        use iron::status::Status;
-        use iron_test::request;
-
-        use super::Endpoint;
-
-        let router = UsersRouter::new();
-
-    }
-
-    it "should respond with 501 not implemented" {
-        const ENDPOINTS: &'static[Endpoint] = &[
-            (Method::Post,      &["invitations"]),
-            (Method::Get,       &["invitations"]),
-            (Method::Delete,    &["invitations"]),
-            (Method::Post,      &["users"]),
-            (Method::Get,       &["users"]),
-            (Method::Put,       &["users", "*"]),
-            (Method::Post,      &["users", "*"]),
-            (Method::Post,      &["recoveries", "*"]),
-            (Method::Get,       &["recoveries", "*", "*"]),
-            (Method::Get,       &["permissions"]),
-            (Method::Get,       &["permissions", "*"]),
-            (Method::Get,       &["permissions", "*", "*"]),
-            (Method::Get,       &["permissions", "_", "*"]),
-            (Method::Put,       &["permissions", "*", "*"]),
-        ];
-
-        for endpoint in ENDPOINTS {
-            let (ref method, path) = *endpoint;
-            let path = "http://localhost:3000/".to_string() +
-                       &(path.join("/").replace("*", "foo"));
-
-            let res = match *method {
-                Method::Get => {
-                    request::get(&path, Headers::new(), &router)
-                },
-                Method::Post => {
-                    request::post(&path, Headers::new(), "", &router)
-                },
-                Method::Delete => {
-                    request::delete(&path, Headers::new(), &router)
-                },
-                Method::Put => {
-                    request::put(&path, Headers::new(), "", &router)
-                },
-                _ => {
-                    assert!(false);
-                    request::get(&path, Headers::new(), &router)
-                }
-            };
-            assert_eq!(res.unwrap().status.unwrap(), Status::NotImplemented);
         }
     }
 }
