@@ -184,11 +184,19 @@ impl UsersDb {
         )
     }
 
-    pub fn create(&self, user: &User) -> rusqlite::Result<c_int> {
-        self.connection.execute("INSERT INTO users
+    pub fn create(&self, user: &User) -> rusqlite::Result<User> {
+        match self.connection.execute("INSERT INTO users
             (name, email, password, secret) VALUES ($1, $2, $3, $4)",
             &[&user.name, &user.email, &user.password, &user.secret]
-        )
+        ) {
+            Ok(_) => {
+               match self.read(ReadFilter::Name(user.name.to_owned())) {
+                   Ok(users) => Ok(users[0].to_owned()),
+                   Err(err) => Err(err)
+               }
+            },
+            Err(err) => Err(err)
+        }
     }
 
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {

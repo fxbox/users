@@ -2,19 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use super::users_db::{ReadFilter, UsersDb};
+use super::users_db::{ReadFilter, User, UsersDb};
 use super::errors::*;
 
 use crypto::sha2::Sha256;
 use iron::{AroundMiddleware, Handler, headers, status};
 use iron::method::Method;
 use iron::prelude::*;
-use jwt::{Header, Token};
+use jwt::{self, Error, Header, Token};
 
 #[derive(Default, RustcDecodable, RustcEncodable)]
 pub struct SessionClaims{
     pub id: i32,
     pub name: String
+}
+
+pub struct SessionToken;
+
+impl SessionToken {
+    pub fn new(user: &User) -> Result<String, Error> {
+        let jwt_header: jwt::Header = Default::default();
+        let claims = SessionClaims {
+            id: user.id.unwrap(),
+            name: user.name.to_owned(),
+            ..Default::default()
+        };
+        let token = jwt::Token::new(jwt_header, claims);
+        token.signed(
+            user.secret.to_owned().as_bytes(),
+            Sha256::new()
+        )
+    }
 }
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use super::auth_middleware::SessionClaims;
+use super::auth_middleware::SessionToken;
 use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 use super::errors::*;
 
@@ -78,6 +78,27 @@ struct LoginResponse {
     session_token: String
 }
 
+impl LoginResponse {
+    fn new(user: &User) -> IronResult<Response> {
+        let session_token = match SessionToken::new(&user) {
+            Ok(token) => token,
+            Err(_) => return EndpointError::new(
+                status::InternalServerError, 500
+            )
+        };
+        let body_obj = LoginResponse{
+           session_token: session_token
+        };
+        let body = match json::encode(&body_obj) {
+            Ok(body) => body,
+            Err(_) => return EndpointError::new(
+                status::InternalServerError, 500
+            )
+        };
+        Ok(Response::with((status::Created, body)))
+    }
+}
+
 pub struct UsersRouter;
 
 impl UsersRouter {
@@ -108,16 +129,15 @@ impl UsersRouter {
                 Err(error) => {
                     println!("{:?}", error);
                     return EndpointError::new(
-                        status::BadRequest,
-                        400
+                        status::BadRequest, 400
                     );
                 }
             };
 
         let db = UsersDb::new();
         match db.create(&admin) {
-            Ok(_) => {
-                Ok(Response::with(status::Ok))
+            Ok(admin) => {
+                LoginResponse::new(&admin)
             },
             Err(error) => {
                 println!("{:?}", error);
@@ -126,48 +146,47 @@ impl UsersRouter {
         }
     }
 
-    /// Returns Some pair of valid credentials if both username and password are provided or None elsewhere.
-    fn credentials_from_header(auth: &Authorization<Basic>) -> Option<Credentials> {
-        let &Authorization(Basic { ref username, password: ref maybe_password }) = auth;
-        let something_is_missed = username.is_empty() || match *maybe_password {
-            None => true,
-            Some(ref psw) => psw.is_empty()
-        };
-        if something_is_missed {
-            None
-        } else {
-            Some((username.to_owned(), maybe_password.as_ref().unwrap().to_owned()))
-        }
-    }
-
     fn login(req: &mut Request) -> IronResult<Response> {
-        use std::default::Default;
-        use crypto::sha2::Sha256;
-        use jwt;
+
+        // Return Some pair of valid credentials if both username and password
+        // are provided or None elsewhere.
+        fn credentials_from_header(auth: &Authorization<Basic>)
+            -> Option<Credentials> {
+            let &Authorization(Basic {
+                ref username,
+                password: ref maybe_password
+            }) = auth;
+            let something_is_missed =
+                username.is_empty() || match *maybe_password {
+                None => true,
+                Some(ref psw) => psw.is_empty()
+            };
+            if something_is_missed {
+                None
+            } else {
+                Some((
+                    username.to_owned(),
+                    maybe_password.as_ref().unwrap().to_owned()
+                ))
+            }
+        }
 
         let error103 = EndpointError::new(status::BadRequest, 103);
         let header: Option<&Authorization<Basic>> = req.headers.get();
-        if let Some(authorization) = header {
-            if let Some((username, password)) = UsersRouter::credentials_from_header(authorization) {
+        if let Some(auth) = header {
+            if let Some((username, password)) = credentials_from_header(auth) {
                 let users_db = UsersDb::new();
-                let users = users_db.read(ReadFilter::Credentials(username, password)).unwrap();
+                let users = match users_db.read(
+                    ReadFilter::Credentials(username, password)) {
+                    Ok(users) => users,
+                    Err(_) => return EndpointError::new(
+                        status::InternalServerError, 500
+                    )
+                };
                 if users.len() != 1 {
                     return EndpointError::new(status::Unauthorized, 401);
                 }
-
-                let User{ id, ref name, ref secret, .. } = users[0];
-                let jwt_header: jwt::Header = Default::default();
-                let claims = SessionClaims {
-                    id: id.unwrap(),
-                    name: name.to_owned(),
-                    ..Default::default()
-                };
-                let token = jwt::Token::new(jwt_header, claims);
-                let signed = token.signed(secret.to_owned().as_bytes(), Sha256::new()).ok().unwrap();
-                let body_obj = LoginResponse{
-                   session_token: signed
-                };
-                Ok(Response::with((status::Created, json::encode(&body_obj).unwrap())))
+                LoginResponse::new(&users[0])
             } else {
                 error103
             }
@@ -243,14 +262,31 @@ describe! setup_tests {
         let router = UsersRouter::new();
     }
 
-    it "should respond 200 OK for a proper POST /setup" {
+    it "should respond 201 Created for a proper POST /setup" {
+        use super::LoginResponse;
+        use super::super::auth_middleware::SessionClaims;
+        use iron::prelude::Response;
+        use iron_test::response::extract_body_to_string;
+        use jwt;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            json::decode(&extract_body_to_string(response))
+        }
+
         match request::post("http://localhost:3000/setup", Headers::new(),
                             "{\"username\": \"u\",
                               \"email\": \"u@d\",
                               \"password\": \"12345678\"}",
                             &router) {
             Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::Ok);
+                assert_eq!(res.status.unwrap(), Status::Created);
+                let body_obj = extract_body_to::<LoginResponse>(res).unwrap();
+                let token = body_obj.session_token;
+                let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
+                    .ok().unwrap().claims;
+                assert_eq!(claims.name, "u");
             },
             Err(err) => {
                 println!("{:?}", err);

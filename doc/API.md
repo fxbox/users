@@ -60,6 +60,8 @@ The currently-defined error responses are:
 * status code 400, errno 100: Invalid user name. Missing or malformed user name.
 * status code 400, errno 101: Invalid email. Missing or malformed email.
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
+* status code 400, errno 103: Missing or malformed authentication header.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
 * status code 409, errno 409: Conflict. The user is already registered.
 * status code 501, errno 501: Internal server error.
 * any status code, errno 999: Unknown error
@@ -87,12 +89,13 @@ Content-Type: application/json
 }
 ```
 ### Response
-Successful requests will produce a "204 OK" response with an auth token with `admin` scope in the `Session-Token` header.
+Successful requests will produce a "201 Created" response with a session token in the body.
 ```ssh
-HTTP/1.1 204 OK
+HTTP/1.1 201 OK
 Connection: close
-Session-Token: eyJhbGciOiJSUzI1NiJ9...i_dQ
-Date: Mon, 5 Feb 2016 16:17:50 GMT
+{
+  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
+}
 ```
 
 Failing requests may be due to the following errors:
