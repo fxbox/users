@@ -73,7 +73,7 @@ The currently-defined error responses are:
     * [POST /login](#post-login)
 
 ## POST /setup
-Allow to initiate the box by registering an admin user. **Once the admin user is created, this route will be removed**.
+Allow to initiate the box by registering an admin user.
 ### Request
 ___Parameters___
 * email - Admin email.
@@ -97,6 +97,8 @@ Connection: close
   "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
 }
 ```
+
+**Once the admin user is created, this route will return a 410 error, Gone.**.
 
 Failing requests may be due to the following errors:
 * status code 400, errno 100: Invalid user name. Missing or malformed user name.

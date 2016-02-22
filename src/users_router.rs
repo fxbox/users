@@ -103,6 +103,16 @@ pub struct UsersRouter;
 
 impl UsersRouter {
     fn setup(req: &mut Request) -> IronResult<Response> {
+        // This endpoint should be disabled and return error 410 (Gone)
+        // if there is any admin user already configured.
+        let db = UsersDb::new();
+        let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
+        if admins.len() > 0 {
+            return EndpointError::new(
+                        status::Gone, 410
+            );
+        }
+
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
             username: String,
@@ -124,6 +134,7 @@ impl UsersRouter {
             .name(&body.username)
             .email(&body.email)
             .password(&body.password)
+            .is_admin(true)
             .finalize() {
                 Ok(user) => user,
                 Err(error) => {
@@ -134,7 +145,6 @@ impl UsersRouter {
                 }
             };
 
-        let db = UsersDb::new();
         match db.create(&admin) {
             Ok(admin) => {
                 LoginResponse::new(&admin)
@@ -258,8 +268,11 @@ describe! setup_tests {
         use iron::Headers;
         use iron::status::Status;
         use iron_test::request;
+        use super::super::users_db::UsersDb;
 
         let router = UsersRouter::new();
+        let usersDb = UsersDb::new();
+        usersDb.clear().ok();
     }
 
     it "should respond 201 Created for a proper POST /setup" {
@@ -270,6 +283,7 @@ describe! setup_tests {
         use jwt;
         use rustc_serialize::Decodable;
         use rustc_serialize::json::{self, DecodeResult};
+        use super::super::users_db::ReadFilter;
 
         fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
             json::decode(&extract_body_to_string(response))
@@ -287,12 +301,40 @@ describe! setup_tests {
                 let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                     .ok().unwrap().claims;
                 assert_eq!(claims.name, "u");
+
+                // Check the user created is admin
+                let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
+                assert_eq!(admins.len(), 1);
+                assert_eq!(admins[0].email, "u@d");
             },
             Err(err) => {
                 println!("{:?}", err);
                 assert!(false);
             }
         };
+    }
+
+    it "should respond 410 Gone if an admin account exists" {
+        // Be sure we have an admin
+        use super::super::users_db::UserBuilder;
+        usersDb.create(&UserBuilder::new()
+                   .id(1).name("admin")
+                   .password("password!!")
+                   .email("admin@example.com")
+                   .is_admin(true)
+                   .finalize().unwrap()).ok();
+        match request::post("http://localhost:3000/setup", Headers::new(), 
+                            "{\"username\": \"u\",
+                              \"email\": \"u@d\",
+                              \"password\": \"12345678\"}",
+                            &router) {
+            Ok(_) => {
+                assert!(false);
+            },
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::Gone);
+            }
+        }
     }
 
     it "should respond 400 BadRequest if username is missing" {
