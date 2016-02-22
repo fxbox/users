@@ -54,10 +54,10 @@ impl UserBuilder {
     pub fn new() -> UserBuilder {
         UserBuilder {
             id: None,
-            name: "".to_string(),
-            email: "".to_string(),
-            password: "".to_string(),
-            secret: "".to_string(),
+            name: "".to_owned(),
+            email: "".to_owned(),
+            password: "".to_owned(),
+            secret: "".to_owned(),
             error: None,
             is_admin: Some(false)
         }
@@ -111,7 +111,7 @@ impl UserBuilder {
         self
     }
 
-    pub fn is_admin(&mut self, admin: bool) -> &mut UserBuilder {
+    pub fn set_admin(&mut self, admin: bool) -> &mut UserBuilder {
         self.is_admin = Some(admin);
         self
     }
@@ -163,12 +163,12 @@ pub struct UsersDb {
 
 #[cfg(test)]
 fn get_db_environment() -> String {
-    "./users_db_test.sqlite".to_string()
+    "./users_db_test.sqlite".to_owned()
 }
 
 #[cfg(not(test))]
 fn get_db_environment() -> String {
-    "./users_db.sqlite".to_string()
+    "./users_db.sqlite".to_owned()
 }
 
 impl UsersDb {
@@ -360,77 +360,77 @@ describe! user_db_tests {
 
     it "should read users from db" {
         let usersInDb = usersDb.read(ReadFilter::All).unwrap();
-        assert_eq!(usersInDb.len(), defaultUsers.len());
 
-        for i in 0..usersInDb.len() {
-            assert_eq!(usersInDb[i], defaultUsers[i]);
+        assert_eq!(usersInDb.len(), defaultUsers.len());
+        for (user, defaultUser) in usersInDb.iter().zip(defaultUsers) {
+            assert_eq!(*user, defaultUser);
         }
     }
 
     it "should read user by id" {
-        for i in 0..defaultUsers.len() {
+        for user in &defaultUsers {
             let users = usersDb.read(
-                ReadFilter::Id(defaultUsers[i].id.unwrap())).unwrap();
+                ReadFilter::Id(user.id.unwrap())).unwrap();
             assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, defaultUsers[i].id);
-            assert_eq!(users[0].name, defaultUsers[i].name);
-            assert_eq!(users[0].email, defaultUsers[i].email);
-            assert_eq!(users[0].password, defaultUsers[i].password);
-            assert_eq!(users[0].secret, defaultUsers[i].secret);
+            assert_eq!(users[0].id, user.id);
+            assert_eq!(users[0].name, user.name);
+            assert_eq!(users[0].email, user.email);
+            assert_eq!(users[0].password, user.password);
+            assert_eq!(users[0].secret, user.secret);
         }
     }
 
     it "should read user by name" {
-        for i in 0..defaultUsers.len() {
+        for user in &defaultUsers {
             let users = usersDb.read(
-                ReadFilter::Name(defaultUsers[i].name.clone())).unwrap();
+                ReadFilter::Name(user.name.clone())).unwrap();
             assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, defaultUsers[i].id);
-            assert_eq!(users[0].name, defaultUsers[i].name);
-            assert_eq!(users[0].email, defaultUsers[i].email);
-            assert_eq!(users[0].password, defaultUsers[i].password);
-            assert_eq!(users[0].secret, defaultUsers[i].secret);
+            assert_eq!(users[0].id, user.id);
+            assert_eq!(users[0].name, user.name);
+            assert_eq!(users[0].email, user.email);
+            assert_eq!(users[0].password, user.password);
+            assert_eq!(users[0].secret, user.secret);
         }
     }
 
     it "should read user by email" {
-        for i in 0..defaultUsers.len() {
+        for user in &defaultUsers {
             let users = usersDb.read(
-                ReadFilter::Email(defaultUsers[i].email.clone())).unwrap();
+                ReadFilter::Email(user.email.clone())).unwrap();
             assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, defaultUsers[i].id);
-            assert_eq!(users[0].name, defaultUsers[i].name);
-            assert_eq!(users[0].email, defaultUsers[i].email);
-            assert_eq!(users[0].password, defaultUsers[i].password);
-            assert_eq!(users[0].secret, defaultUsers[i].secret);
+            assert_eq!(users[0].id, user.id);
+            assert_eq!(users[0].name, user.name);
+            assert_eq!(users[0].email, user.email);
+            assert_eq!(users[0].password, user.password);
+            assert_eq!(users[0].secret, user.secret);
         }
     }
 
     it "should read user by name or email with name" {
-        for i in 0..defaultUsers.len() {
+        for (i, user) in defaultUsers.iter().enumerate() {
             let users = usersDb.read(ReadFilter::Credentials(
-                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+                user.name.clone(), format!("password{}", i + 1))
             ).unwrap();
             assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, defaultUsers[i].id);
-            assert_eq!(users[0].name, defaultUsers[i].name);
-            assert_eq!(users[0].email, defaultUsers[i].email);
-            assert_eq!(users[0].password, defaultUsers[i].password);
-            assert_eq!(users[0].secret, defaultUsers[i].secret);
+            assert_eq!(users[0].id, user.id);
+            assert_eq!(users[0].name, user.name);
+            assert_eq!(users[0].email, user.email);
+            assert_eq!(users[0].password, user.password);
+            assert_eq!(users[0].secret, user.secret);
         }
     }
 
     it "should read user by name or email with email" {
-        for i in 0..defaultUsers.len() {
+        for (i, user) in defaultUsers.iter().enumerate() {
             let users = usersDb.read(ReadFilter::Credentials(
-                defaultUsers[i].name.clone(), format!("password{}", i + 1))
+                user.name.clone(), format!("password{}", i + 1))
             ).unwrap();
             assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, defaultUsers[i].id);
-            assert_eq!(users[0].name, defaultUsers[i].name);
-            assert_eq!(users[0].email, defaultUsers[i].email);
-            assert_eq!(users[0].password, defaultUsers[i].password);
-            assert_eq!(users[0].secret, defaultUsers[i].secret);
+            assert_eq!(users[0].id, user.id);
+            assert_eq!(users[0].name, user.name);
+            assert_eq!(users[0].email, user.email);
+            assert_eq!(users[0].password, user.password);
+            assert_eq!(users[0].secret, user.secret);
         }
     }
 
@@ -443,7 +443,7 @@ describe! user_db_tests {
 
     it "should update users correctly" {
         let mut user = defaultUsers[0].clone();
-        user.name = "New Name".to_string();
+        user.name = "New Name".to_owned();
 
         usersDb.update(user.id.unwrap(), &user).unwrap();
 
@@ -454,22 +454,22 @@ describe! user_db_tests {
 
     it "should not retrieve any records" {
         let users = usersDb.read(ReadFilter::Name(
-            "Xyz' OR '1'='1".to_string())
+            "Xyz' OR '1'='1".to_owned())
         ).unwrap();
         assert_eq!(users.len(), 0);
 
         let users = usersDb.read(ReadFilter::Name(
-            "Xyz\' OR \'1\'=\'1".to_string())
+            "Xyz\' OR \'1\'=\'1".to_owned())
         ).unwrap();
         assert_eq!(users.len(), 0);
 
         let users = usersDb.read(ReadFilter::Name(
-            "Xyz\\' OR \\'1\\'=\\'1".to_string())
+            "Xyz\\' OR \\'1\\'=\\'1".to_owned())
         ).unwrap();
         assert_eq!(users.len(), 0);
 
         let users = usersDb.read(ReadFilter::Credentials(
-            "1\' OR \'1\' = \'1\'))/*".to_string(), "foo".to_string()
+            "1\' OR \'1\' = \'1\'))/*".to_owned(), "foo".to_owned()
         )).unwrap();
         assert_eq!(users.len(), 0);
     }
@@ -483,7 +483,7 @@ describe! user_db_tests {
         let admin = UserBuilder::new().name("Admin")
                 .email("admin@mozilla.org")
                 .password("password!")
-                .is_admin(true)
+                .set_admin(true)
                 .finalize().unwrap();
         usersDb.create(&admin).unwrap();
 

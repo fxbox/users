@@ -35,9 +35,9 @@ pub struct ErrorBody {
 pub struct EndpointError;
 
 impl EndpointError {
-    pub fn new(status: status::Status, errno: u16)
+    pub fn with(status: status::Status, errno: u16)
         -> IronResult<Response> {
-        let error = status.canonical_reason().unwrap().to_string();
+        let error = status.canonical_reason().unwrap().to_owned();
         let body = ErrorBody {
             code: status.to_u16(),
             errno: errno,
@@ -60,9 +60,9 @@ pub fn from_decoder_error(error: json::DecoderError) -> IronResult<Response> {
                 "password" => 102,
                 _ => 400
             };
-            EndpointError::new(status::BadRequest, errno)
+            EndpointError::with(status::BadRequest, errno)
         },
-        _ => EndpointError::new(status::BadRequest, 400)
+        _ => EndpointError::with(status::BadRequest, 400)
     }
 }
 
@@ -72,12 +72,12 @@ pub fn from_sqlite_error(error: rusqlite_error) -> IronResult<Response> {
             match error.unwrap().as_ref() {
                 "UNIQUE constraint failed: users.email" |
                 "UNIQUE constraint failed: users.username" =>
-                    EndpointError::new(status::Conflict, 409),
-                _ => EndpointError::new(
+                    EndpointError::with(status::Conflict, 409),
+                _ => EndpointError::with(
                     status::InternalServerError, 501
                 )
             }
         }
-        _ => EndpointError::new(status::InternalServerError, 501)
+        _ => EndpointError::with(status::InternalServerError, 501)
     }
 }

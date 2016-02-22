@@ -29,7 +29,7 @@ use foxbox_users::users_router::UsersRouter;
 use iron::prelude::*;
 
 fn main() {
-    let router = UsersRouter::new();
+    let router = UsersRouter::init();
     Iron::new(router).http("localhost:3000").unwrap();
 }
 ```
