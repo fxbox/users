@@ -275,6 +275,8 @@ describe! setup_tests {
         let router = UsersRouter::init();
         let usersDb = UsersDb::new();
         usersDb.clear().ok();
+
+        let endpoint = "http://localhost:3000/setup";
     }
 
     it "should respond 201 Created for a proper POST /setup" {
@@ -285,16 +287,15 @@ describe! setup_tests {
         use jwt;
         use rustc_serialize::Decodable;
         use rustc_serialize::json::{self, DecodeResult};
-        use super::super::users_db::ReadFilter;
 
         fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
             json::decode(&extract_body_to_string(response))
         }
 
-        match request::post("http://localhost:3000/setup", Headers::new(),
-                            "{\"username\": \"u\",
-                              \"email\": \"u@d\",
-                              \"password\": \"12345678\"}",
+        match request::post(endpoint, Headers::new(),
+                            "{\"username\": \"username\",
+                              \"email\": \"username@domain.com\",
+                              \"password\": \"password\"}",
                             &router) {
             Ok(res) => {
                 assert_eq!(res.status.unwrap(), Status::Created);
@@ -302,12 +303,7 @@ describe! setup_tests {
                 let token = body_obj.session_token;
                 let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                     .ok().unwrap().claims;
-                assert_eq!(claims.name, "u");
-
-                // Check the user created is admin
-                let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
-                assert_eq!(admins.len(), 1);
-                assert_eq!(admins[0].email, "u@d");
+                assert_eq!(claims.name, "username");
             },
             Err(err) => {
                 println!("{:?}", err);
@@ -316,7 +312,34 @@ describe! setup_tests {
         };
     }
 
+    it "should create one admin user" {
+        use super::super::users_db::ReadFilter;
+
+        let body = "{\"username\": \"username\",\
+                    \"email\": \"username@domain.com\",\
+                    \"password\": \"password\"}";
+
+        if let Ok(res) = request::post(endpoint, Headers::new(), body, &router) {
+            assert_eq!(res.status.unwrap(), Status::Created);
+            let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
+            assert_eq!(admins.len(), 1);
+            assert_eq!(admins[0].email, "username@domain.com");
+        } else {
+            assert!(false);
+        }
+    }
+
     it "should respond 410 Gone if an admin account exists" {
+        use iron::prelude::Response;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            use iron_test::response::extract_body_to_string;
+            json::decode(&extract_body_to_string(response))
+        }
+
+        use super::super::errors::{ErrorBody};
+
         // Be sure we have an admin
         use super::super::users_db::UserBuilder;
         usersDb.create(&UserBuilder::new()
@@ -325,7 +348,7 @@ describe! setup_tests {
                    .email("admin@example.com")
                    .set_admin(true)
                    .finalize().unwrap()).ok();
-        match request::post("http://localhost:3000/setup", Headers::new(), 
+        match request::post(endpoint, Headers::new(),
                             "{\"username\": \"u\",
                               \"email\": \"u@d\",
                               \"password\": \"12345678\"}",
@@ -333,50 +356,96 @@ describe! setup_tests {
             Ok(_) => {
                 assert!(false);
             },
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::Gone);
+            Err(error) => {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::Gone);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 410);
             }
         }
     }
 
-    it "should respond 400 BadRequest if username is missing" {
-        match request::post("http://localhost:3000/setup", Headers::new(),
+    it "should respond 400 BadRequest, errno 100 if username is missing" {
+        use iron::prelude::Response;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            use iron_test::response::extract_body_to_string;
+            json::decode(&extract_body_to_string(response))
+        }
+
+        use super::super::errors::{ErrorBody};
+
+        match request::post(endpoint, Headers::new(),
                             "{\"email\": \"u@d\",
                               \"password\": \"12345678\"}",
                             &router) {
             Ok(_) => {
                 assert!(false);
             },
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            Err(error) => {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 100);
             }
         };
     }
 
-    it "should respond 400 BadRequest if email is missing" {
-        match request::post("http://localhost:3000/setup", Headers::new(),
+    it "should respond 400 BadRequest, errno 101 if email is missing" {
+        use iron::prelude::Response;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            use iron_test::response::extract_body_to_string;
+            json::decode(&extract_body_to_string(response))
+        }
+
+        use super::super::errors::{ErrorBody};
+
+        match request::post(endpoint, Headers::new(),
                             "{\"username\": \"u\",
                               \"password\": \"12345678\"}",
                             &router) {
             Ok(_) => {
                 assert!(false);
             },
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            Err(error) => {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 101);
             }
         };
     }
 
-    it "should respond 400 BadRequest if password is missing" {
-        match request::post("http://localhost:3000/setup", Headers::new(),
+    it "should respond 400 BadRequest, errno 102 if password is missing" {
+        use iron::prelude::Response;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{self, DecodeResult};
+        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
+            use iron_test::response::extract_body_to_string;
+            json::decode(&extract_body_to_string(response))
+        }
+
+        use super::super::errors::{ErrorBody};
+
+        match request::post(endpoint, Headers::new(),
                             "{\"username\": \"u\",
                               \"email\": \"u@d\"}",
                             &router) {
             Ok(_) => {
                 assert!(false);
             },
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::BadRequest);
+            Err(error) => {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 102);
             }
         };
     }
