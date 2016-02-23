@@ -46,8 +46,8 @@ impl AfterMiddleware for CORS {
             }
             for (i, path) in path.iter().enumerate() {
                 is_cors_endpoint = false;
-                if req.url.path[i] != path.to_string() &&
-                   "*".to_string() != path.to_string() {
+                if req.url.path[i] != path.to_owned() &&
+                   "*" != path.to_owned() {
                     break;
                 }
                 is_cors_endpoint = true;
@@ -63,8 +63,8 @@ impl AfterMiddleware for CORS {
 
         res.headers.set(headers::AccessControlAllowOrigin::Any);
         res.headers.set(headers::AccessControlAllowHeaders(
-                vec![UniCase("accept".to_string()),
-                UniCase("content-type".to_string())]));
+                vec![UniCase("accept".to_owned()),
+                UniCase("content-type".to_owned())]));
         res.headers.set(headers::AccessControlAllowMethods(
                 vec![Get,Head,Post,Delete,Options,Put,Patch]));
         Ok(res)
@@ -79,10 +79,10 @@ struct LoginResponse {
 }
 
 impl LoginResponse {
-    fn new(user: &User) -> IronResult<Response> {
-        let session_token = match SessionToken::new(&user) {
+    fn with_user(user: &User) -> IronResult<Response> {
+        let session_token = match SessionToken::for_user(&user) {
             Ok(token) => token,
-            Err(_) => return EndpointError::new(
+            Err(_) => return EndpointError::with(
                 status::InternalServerError, 500
             )
         };
@@ -91,7 +91,7 @@ impl LoginResponse {
         };
         let body = match json::encode(&body_obj) {
             Ok(body) => body,
-            Err(_) => return EndpointError::new(
+            Err(_) => return EndpointError::with(
                 status::InternalServerError, 500
             )
         };
@@ -103,21 +103,21 @@ pub struct UsersRouter;
 
 impl UsersRouter {
     fn setup(req: &mut Request) -> IronResult<Response> {
-        // This endpoint should be disabled and return error 410 (Gone)
-        // if there is any admin user already configured.
-        let db = UsersDb::new();
-        let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
-        if admins.len() > 0 {
-            return EndpointError::new(
-                        status::Gone, 410
-            );
-        }
-
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
             username: String,
             email: String,
             password: String
+        }
+
+        // This endpoint should be disabled and return error 410 (Gone)
+        // if there is any admin user already configured.
+        let db = UsersDb::new();
+        let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
+        if !admins.is_empty() {
+            return EndpointError::with(
+                        status::Gone, 410
+            );
         }
 
         let mut payload = String::new();
@@ -134,12 +134,12 @@ impl UsersRouter {
             .name(&body.username)
             .email(&body.email)
             .password(&body.password)
-            .is_admin(true)
+            .set_admin(true)
             .finalize() {
                 Ok(user) => user,
                 Err(error) => {
                     println!("{:?}", error);
-                    return EndpointError::new(
+                    return EndpointError::with(
                         status::BadRequest, 400
                     );
                 }
@@ -147,7 +147,7 @@ impl UsersRouter {
 
         match db.create(&admin) {
             Ok(admin) => {
-                LoginResponse::new(&admin)
+                LoginResponse::with_user(&admin)
             },
             Err(error) => {
                 println!("{:?}", error);
@@ -181,7 +181,7 @@ impl UsersRouter {
             }
         }
 
-        let error103 = EndpointError::new(status::BadRequest, 103);
+        let error103 = EndpointError::with(status::BadRequest, 103);
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
             if let Some((username, password)) = credentials_from_header(auth) {
@@ -189,14 +189,14 @@ impl UsersRouter {
                 let users = match users_db.read(
                     ReadFilter::Credentials(username, password)) {
                     Ok(users) => users,
-                    Err(_) => return EndpointError::new(
+                    Err(_) => return EndpointError::with(
                         status::InternalServerError, 500
                     )
                 };
                 if users.len() != 1 {
-                    return EndpointError::new(status::Unauthorized, 401);
+                    return EndpointError::with(status::Unauthorized, 401);
                 }
-                LoginResponse::new(&users[0])
+                LoginResponse::with_user(&users[0])
             } else {
                 error103
             }
@@ -205,7 +205,7 @@ impl UsersRouter {
         }
     }
 
-    pub fn new() -> super::iron::middleware::Chain {
+    pub fn init() -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
         router.post("/setup", UsersRouter::setup);
@@ -223,7 +223,7 @@ describe! cors_tests {
         use iron::{headers, Headers};
         use iron_test::request;
 
-        let router = UsersRouter::new();
+        let router = UsersRouter::init();
     }
 
     it "should get the appropriate CORS headers" {
@@ -231,7 +231,7 @@ describe! cors_tests {
 
         for endpoint in CORS::ENDPOINTS {
             let (_, path) = *endpoint;
-            let path = "http://localhost:3000/".to_string() +
+            let path = "http://localhost:3000/".to_owned() +
                        &(path.join("/").replace("*", "foo"));
             match request::options(&path, Headers::new(), &router) {
                 Ok(res) => {
@@ -270,7 +270,7 @@ describe! setup_tests {
         use iron_test::request;
         use super::super::users_db::UsersDb;
 
-        let router = UsersRouter::new();
+        let router = UsersRouter::init();
         let usersDb = UsersDb::new();
         usersDb.clear().ok();
     }
@@ -321,7 +321,7 @@ describe! setup_tests {
                    .id(1).name("admin")
                    .password("password!!")
                    .email("admin@example.com")
-                   .is_admin(true)
+                   .set_admin(true)
                    .finalize().unwrap()).ok();
         match request::post("http://localhost:3000/setup", Headers::new(), 
                             "{\"username\": \"u\",
@@ -400,7 +400,7 @@ describe! login_tests {
             json::decode(&extract_body_to_string(response))
         }
 
-        let router = UsersRouter::new();
+        let router = UsersRouter::init();
         let usersDb = UsersDb::new();
         usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()

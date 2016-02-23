@@ -20,12 +20,11 @@ pub struct SessionClaims{
 pub struct SessionToken;
 
 impl SessionToken {
-    pub fn new(user: &User) -> Result<String, Error> {
+    pub fn for_user(user: &User) -> Result<String, Error> {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned(),
-            ..Default::default()
+            name: user.name.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         token.signed(
@@ -48,8 +47,7 @@ impl PartialEq for AuthEndpoint {
         }
 
         for (i, path) in self_path.iter().enumerate() {
-            if other_path[i] != path.to_string() &&
-               "*".to_string() != path.to_string() {
+            if other_path[i] != path.clone() && "*" != path {
                 return false;
             }
         }
@@ -77,7 +75,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
                 let token = match Token::<Header, SessionClaims>::parse(token) {
                     Ok(token) => token,
-                    Err(_) => return EndpointError::new(status::Unauthorized, 401)
+                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
                 };
 
                 // To verify the token we need to get the secret associated to
@@ -86,17 +84,17 @@ impl<H: Handler> Handler for AuthHandler<H> {
                 match db.read(ReadFilter::Id(token.claims.id)) {
                     Ok(users) => {
                         if users.len() != 1 {
-                            return EndpointError::new(status::Unauthorized, 401)
+                            return EndpointError::with(status::Unauthorized, 401)
                         }
                         if !token.verify(users[0].secret.to_owned().as_bytes(),
                                          Sha256::new()) {
-                            return EndpointError::new(status::Unauthorized, 401)
+                            return EndpointError::with(status::Unauthorized, 401)
                         }
                     },
-                    Err(_) => return EndpointError::new(status::Unauthorized, 401)
+                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
                 }
             },
-            _ => return EndpointError::new(status::Unauthorized, 401)
+            _ => return EndpointError::with(status::Unauthorized, 401)
         };
         self.handler.handle(req)
     }
@@ -179,8 +177,7 @@ describe! auth_middleware_tests {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned(),
-            ..Default::default()
+            name: user.name.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         let signed = token.signed(

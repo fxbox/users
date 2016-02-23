@@ -47,7 +47,7 @@ fn main() {
         Ok(users) => println!("Users {:?}", users),
         Err(err) => println!("Crap {}", err)
     }
-    let router = UsersRouter::new();
+    let router = UsersRouter::init();
     let mut chain = Chain::new(router);
     chain.around(AuthMiddleware{
         auth_endpoints: vec![]
