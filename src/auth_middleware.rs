@@ -2,6 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! A middleware for authenticating requests based on
+//! [JWT](https://jwt.io/introduction/).
+//!
+//! # The Auth Middleware
+//!
+//! Here _auth_ stands for _authentication_. A
+//! [POST `/login`](https://github.com/fxbox/users/blob/master/doc/API.md#post-login)
+//! request will authenticate a user. If so, a session JWT is returned
+//! in the body of the response. This token must be sent with any further request to
+//! keep track of the session.
+
 use super::users_db::{ReadFilter, User, UsersDb};
 use super::errors::*;
 
@@ -100,7 +111,34 @@ impl<H: Handler> Handler for AuthHandler<H> {
     }
 }
 
+/// Handle JWT authentication on specified endpoints.
+///
+/// # Examples
+///
+/// Before passing it as middleware, you should specify the authenticated
+/// endpoints:
+///
+/// ```
+/// extern crate iron;
+/// extern crate foxbox_users;
+///
+/// fn main() {
+///     use foxbox_users::users_router::UsersRouter;
+///     use foxbox_users::auth_middleware::AuthMiddleware;
+///     use iron::prelude::{Chain, Iron};
+///
+///     let router = UsersRouter::init();
+///     let mut chain = Chain::new(router);
+///     chain.around(AuthMiddleware{
+///         auth_endpoints: vec![]
+///     });
+/// # if false {
+///     Iron::new(chain).http("localhost:3000").unwrap();
+/// # }
+/// }
+/// ```
 pub struct AuthMiddleware {
+    /// `Vec<AuthEndpoint>` containing the set of endpoints to be authenticated.
     pub auth_endpoints: Vec<AuthEndpoint>
 }
 

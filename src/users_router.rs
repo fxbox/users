@@ -2,6 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Contains the Iron router for user managing.
+//!
+//! # User Management Router
+//!
+//! The module contains the `UsersRouter` middleware in charge of managing
+//! user-related REST operations. Exhaustive
+//! [REST documentation](https://github.com/fxbox/users/blob/master/doc/API.md)
+//! can be found in the GitHub repository.
+
 use super::auth_middleware::SessionToken;
 use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 use super::errors::*;
@@ -99,6 +108,27 @@ impl LoginResponse {
     }
 }
 
+/// Manages user-related REST operations.
+///
+/// # Examples
+///
+/// To install the router, you use:
+///
+/// ```
+/// extern crate iron;
+/// extern crate foxbox_users;
+///
+/// fn main() {
+///     use foxbox_users::users_router::UsersRouter;
+///     use iron::prelude::{Chain, Iron};
+///
+///     let router = UsersRouter::init();
+///     let mut chain = Chain::new(router);
+/// # if false {
+///     Iron::new(chain).http("localhost:3000").unwrap();
+/// # }
+/// }
+/// ```
 pub struct UsersRouter;
 
 impl UsersRouter {
@@ -205,6 +235,7 @@ impl UsersRouter {
         }
     }
 
+    /// Creates the Iron user router middleware.
     pub fn init() -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
