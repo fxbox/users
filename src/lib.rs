@@ -7,8 +7,11 @@
 
 #![feature(associated_consts, plugin)]
 
-#![feature(const_fn)] // Dependency of stainless
-#![plugin(stainless)] // Test runner
+#![cfg_attr(test, feature(const_fn))] // Dependency of stainless
+#![cfg_attr(test, plugin(stainless))] // Test runner
+
+#[cfg(test)]
+extern crate iron_test;
 
 extern crate crypto;
 extern crate iron;
@@ -23,8 +26,4 @@ extern crate rand;
 pub mod users_db;
 pub mod users_router;
 pub mod auth_middleware;
-
 mod errors;
-
-#[cfg(test)]
-extern crate iron_test;

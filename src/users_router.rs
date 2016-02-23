@@ -218,6 +218,7 @@ impl UsersRouter {
     }
 }
 
+#[cfg(test)]
 describe! cors_tests {
     before_each {
         use iron::{headers, Headers};
@@ -263,6 +264,7 @@ describe! cors_tests {
     }
 }
 
+#[cfg(test)]
 describe! setup_tests {
     before_each {
         use iron::Headers;
@@ -380,6 +382,7 @@ describe! setup_tests {
     }
 }
 
+#[cfg(test)]
 describe! login_tests {
     before_each {
         use super::super::users_db::{UsersDb, UserBuilder};
