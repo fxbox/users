@@ -13,8 +13,8 @@ rust-crypto = "*"
 unicase = "*"
 jwt = "0.4.0"
 rand = "0.3.14"
-clippy = "0.0.41"
 
 [dev-dependencies]
 iron-test = "*"
 stainless = "0.1.4"
+clippy = "0.0.41"
