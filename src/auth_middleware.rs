@@ -113,6 +113,7 @@ impl AroundMiddleware for AuthMiddleware {
     }
 }
 
+#[cfg(test)]
 describe! auth_middleware_tests {
     before_each {
         use iron::headers::Headers;

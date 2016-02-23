@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#![feature(plugin)]
-#![plugin(clippy)]
-
 #![feature(associated_consts, plugin)]
 
-#![feature(const_fn)] // Dependency of stainless
-#![plugin(stainless)] // Test runner
+#![cfg_attr(test, feature(const_fn))] // Dependency of stainless
+#![cfg_attr(test, plugin(stainless))] // Test runner
+#![cfg_attr(test, plugin(clippy))]    // Linter
+
+#[cfg(test)]
+extern crate iron_test;
 
 extern crate crypto;
 extern crate iron;
@@ -23,8 +24,4 @@ extern crate rand;
 pub mod users_db;
 pub mod users_router;
 pub mod auth_middleware;
-
 mod errors;
-
-#[cfg(test)]
-extern crate iron_test;

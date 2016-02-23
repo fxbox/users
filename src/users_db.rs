@@ -281,6 +281,7 @@ impl UsersDb {
     }
 }
 
+#[cfg(test)]
 describe! user_builder_tests {
     it "should build a user correctly" {
         use crypto::digest::Digest;
@@ -333,6 +334,7 @@ describe! user_builder_tests {
     }
 }
 
+#[cfg(test)]
 describe! user_db_tests {
     before_each {
         let usersDb = UsersDb::new();
