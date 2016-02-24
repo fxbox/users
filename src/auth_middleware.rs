@@ -22,12 +22,17 @@ use iron::method::Method;
 use iron::prelude::*;
 use jwt::{self, Error, Header, Token};
 
+/// Structure representing [JWT claims section](https://jwt.io/introduction/).
+///
+/// Claims made by the authentication protocol includes `id` and `name` with
+/// database unique id and username respectively.
 #[derive(Default, RustcDecodable, RustcEncodable)]
 pub struct SessionClaims{
     pub id: i32,
     pub name: String
 }
 
+/// Factory to create a session token `String` for a user in the database.
 pub struct SessionToken;
 
 impl SessionToken {
@@ -45,6 +50,10 @@ impl SessionToken {
     }
 }
 
+/// Represents an authorized endpoint.
+///
+/// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
+/// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
 #[derive(Debug)]
 pub struct AuthEndpoint(pub Method, pub Vec<String>);
 

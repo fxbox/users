@@ -63,6 +63,7 @@ The currently-defined error responses are:
 * status code 400, errno 103: Missing or malformed authentication header.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 * status code 409, errno 409: Conflict. The user is already registered.
+* status code 410, errno 410: Gone. The resource is no more available. Don't insist.
 * status code 501, errno 501: Internal server error.
 * any status code, errno 999: Unknown error
 
@@ -110,7 +111,7 @@ Failing requests may be due to the following errors:
 ## POST /login
 Authenticates a user.
 ### Request
-Requests must include a [basic authorization header](https://en.wikipedia.org/wiki/Basic_access_authentication#Client_side) with `username:password` encoded in Base64 according to [FC2617](http://www.ietf.org/rfc/rfc2617.txt)
+Requests must include a [basic authorization header](https://en.wikipedia.org/wiki/Basic_access_authentication#Client_side) with `username:password` encoded in Base64 according to [RFC2617](http://www.ietf.org/rfc/rfc2617.txt)
 ```ssh
 POST /setup/ HTTP/1.1
 Content-Type: application/json
