@@ -161,9 +161,9 @@ impl UsersRouter {
         };
 
         let admin = match UserBuilder::new()
-            .name(&body.username)
-            .email(&body.email)
-            .password(&body.password)
+            .name(body.username)
+            .email(body.email)
+            .password(body.password)
             .set_admin(true)
             .finalize() {
                 Ok(user) => user,
@@ -374,9 +374,9 @@ describe! setup_tests {
         // Be sure we have an admin
         use super::super::users_db::UserBuilder;
         usersDb.create(&UserBuilder::new()
-                   .id(1).name("admin")
-                   .password("password!!")
-                   .email("admin@example.com")
+                   .id(1).name(String::from("admin"))
+                   .password(String::from("password!!"))
+                   .email(String::from("admin@example.com"))
                    .set_admin(true)
                    .finalize().unwrap()).ok();
         match request::post(endpoint, Headers::new(),
@@ -507,10 +507,10 @@ describe! login_tests {
         let usersDb = UsersDb::new();
         usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()
-                   .id(1).name("username")
-                   .password("password")
-                   .email("username@example.com")
-                   .secret("secret")
+                   .id(1).name(String::from("username"))
+                   .password(String::from("password"))
+                   .email(String::from("username@example.com"))
+                   .secret(String::from("secret"))
                    .finalize().unwrap()).ok();
         let endpoint = "http://localhost:3000/login";
     }

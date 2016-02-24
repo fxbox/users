@@ -67,7 +67,7 @@ impl PartialEq for AuthEndpoint {
         }
 
         for (i, path) in self_path.iter().enumerate() {
-            if other_path[i] != path.clone() && "*" != path {
+            if &other_path[i] != path && "*" != path {
                 return false;
             }
         }
@@ -181,7 +181,7 @@ describe! auth_middleware_tests {
         let mut chain = Chain::new(router);
         chain.around(AuthMiddleware {
             auth_endpoints: vec![
-                AuthEndpoint(Method::Get, vec!["authenticated".to_string()])
+                AuthEndpoint(Method::Get, vec!["authenticated".to_owned()])
             ]
         });
     }
@@ -216,10 +216,10 @@ describe! auth_middleware_tests {
         let db = UsersDb::new();
         db.clear().ok();
         let user = UserBuilder::new()
-            .id(1).name("username")
-            .password("password")
-            .email("username@example.com")
-            .secret("secret")
+            .id(1).name(String::from("username"))
+            .password(String::from("password"))
+            .email(String::from("username@example.com"))
+            .secret(String::from("secret"))
             .finalize().unwrap();
         db.create(&user).ok();
         let jwt_header: jwt::Header = Default::default();
