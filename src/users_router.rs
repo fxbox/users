@@ -72,10 +72,14 @@ impl AfterMiddleware for CORS {
 
         res.headers.set(headers::AccessControlAllowOrigin::Any);
         res.headers.set(headers::AccessControlAllowHeaders(
-                vec![UniCase("accept".to_owned()),
-                UniCase("content-type".to_owned())]));
+            vec![
+                UniCase(String::from("accept")),
+                UniCase(String::from("content-type"))
+            ]
+        ));
         res.headers.set(headers::AccessControlAllowMethods(
-                vec![Get,Head,Post,Delete,Options,Put,Patch]));
+            vec![Get,Head,Post,Delete,Options,Put,Patch]
+        ));
         Ok(res)
     }
 }
@@ -145,9 +149,7 @@ impl UsersRouter {
         let db = UsersDb::new();
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
-            return EndpointError::with(
-                        status::Gone, 410
-            );
+            return EndpointError::with(status::Gone, 410);
         }
 
         let mut payload = String::new();
@@ -198,9 +200,9 @@ impl UsersRouter {
             }) = auth;
             let something_is_missed =
                 username.is_empty() || match *maybe_password {
-                None => true,
-                Some(ref psw) => psw.is_empty()
-            };
+                    None => true,
+                    Some(ref psw) => psw.is_empty()
+                };
             if something_is_missed {
                 None
             } else {
