@@ -17,14 +17,15 @@
 //! ```
 //! use foxbox_users::users_db::UserBuilder;
 //!
-//! let new_user = UserBuilder::new()
-//!                .name("Miles")                  // mandatory, not empty
-//!                .email("mbdyson@cyberdyne.com") // mandatory, not empty
-//!                .password("s800t101")           // mandatory, at least 8 characters
-//!                .set_admin(true)                // optional, defaults to false
-//!                .secret("1234567890")           // optional, defaults to random
-//!                .finalize()
-//!                .unwrap();
+//! let new_user =
+//!     UserBuilder::new()
+//!     .name(String::from("Miles"))                  // mandatory, not empty
+//!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
+//!     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+//!     .set_admin(true)                              // optional, defaults to false
+//!     .secret(String::from("1234567890"))           // optional, defaults to random
+//!     .finalize()
+//!     .unwrap();
 //! ```
 //!
 //! Calling `UserBuilder#finalize()` will return a `Result&lt;User, UserWithError&gt;`. You
@@ -52,14 +53,15 @@ pub struct User {
 ///
 /// ```
 /// # use foxbox_users::users_db::UserBuilder;
-/// let new_user = UserBuilder::new()
-///                .name("Miles")                  // mandatory, not empty
-///                .email("mbdyson@cyberdyne.com") // mandatory, not empty
-///                .password("s800t101")           // mandatory, at least 8 characters
-///                .set_admin(true)                // optional, defaults to false
-///                .secret("1234567890")           // optional, defaults to random
-///                .finalize()
-///                .unwrap();
+/// let new_user =
+///     UserBuilder::new()
+///     .name(String::from("Miles"))                  // mandatory, not empty
+///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
+///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+///     .set_admin(true)                              // optional, defaults to false
+///     .secret(String::from("1234567890"))           // optional, defaults to random
+///     .finalize()
+///     .unwrap();
 /// ```
 ///
 /// Calling `UserBuilder#finalize()` will return a `Result<User, UserWithError>`. You
@@ -68,8 +70,8 @@ pub struct User {
 /// ```
 /// # use foxbox_users::users_db::{UserBuilder, UserBuilderError};
 /// let failing_user = UserBuilder::new()
-///                    .name("Miles")
-///                    .password("short")
+///                    .name(String::from("Miles"))
+///                    .password(String::from("short"))
 ///                    .finalize()
 ///                    .unwrap_err();
 ///
@@ -81,13 +83,14 @@ pub struct User {
 ///
 /// ```
 /// # use foxbox_users::users_db::UserBuilder;
-/// let new_user = UserBuilder::new()
-///                .name("Miles")                  // mandatory, not empty
-///                .email("mbdyson@cyberdyne.com") // mandatory, not empty
-///                .password("s800t101")           // mandatory, at least 8 characters
-///                .set_admin(true)                // optional, defaults to false
-///                .finalize()
-///                .unwrap();
+/// let new_user =
+///     UserBuilder::new()
+///     .name(String::from("Miles"))                  // mandatory, not empty
+///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
+///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+///     .set_admin(true)                              // optional, defaults to false
+///     .finalize()
+///     .unwrap();
 ///
 /// assert!(!new_user.secret.is_empty());
 /// ```
@@ -275,7 +278,7 @@ impl UsersDb {
     /// ```
     /// # use foxbox_users::users_db::{UserBuilder, UsersDb, ReadFilter};
     /// let db = UsersDb::new();
-    /// # db.create(&UserBuilder::new().name("John Doe").finalize().unwrap());
+    /// # db.create(&UserBuilder::new().name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
     /// let users = db.read(ReadFilter::All).unwrap();
     /// assert!(users.is_empty());
@@ -294,7 +297,7 @@ impl UsersDb {
     ///
     /// ```
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter, UserBuilder};
-    /// let admin = UserBuilder::new().name("admin").set_admin(true).finalize().unwrap();
+    /// let admin = UserBuilder::new().name(String::from("admin")).set_admin(true).finalize().unwrap();
     /// let db = UsersDb::new();
     /// assert!(db.create(&admin).is_ok());
     /// ```
