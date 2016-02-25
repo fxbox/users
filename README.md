@@ -109,3 +109,8 @@ $ cargo build
 ```bash
 $ RUST_TEST_THREADS=1 cargo test
 ```
+### Documentation
+```bash
+$ cargo doc
+```
+Then open `./target/doc/foxbox_users/index.html`. There is not online version available yet.

@@ -2,6 +2,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Provides the User type in addition to the database API.
+//!
+//! # The Users database
+//!
+//! The Users database API provides means to retrieve user sets, and to
+//! create, update and remove single users.
+//!
+//! # Examples
+//!
+//! You can create a user with the UserBuilder type and by chaining
+//! methods this way:
+//!
+//! ```
+//! use foxbox_users::users_db::UserBuilder;
+//!
+//! let new_user = UserBuilder::new()
+//!                .name("Miles")                  // mandatory, not empty
+//!                .email("mbdyson@cyberdyne.com") // mandatory, not empty
+//!                .password("s800t101")           // mandatory, at least 8 characters
+//!                .set_admin(true)                // optional, defaults to false
+//!                .secret("1234567890")           // optional, defaults to random
+//!                .finalize()
+//!                .unwrap();
+//! ```
+//!
+//! Calling `UserBuilder#finalize()` will return a `Result&lt;User, UserWithError&gt;`. You
+//! can inspect `UserWithError#error` attribute to see what failed during initialization.
+//!
+
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use libc::{c_int};
@@ -17,6 +46,51 @@ pub struct User {
     pub is_admin: Option<bool>
 }
 
+/// Creates instances of `User`.
+///
+/// Starting with `UserBuilder::new()` and chaining methods you can create users:
+///
+/// ```
+/// # use foxbox_users::users_db::UserBuilder;
+/// let new_user = UserBuilder::new()
+///                .name("Miles")                  // mandatory, not empty
+///                .email("mbdyson@cyberdyne.com") // mandatory, not empty
+///                .password("s800t101")           // mandatory, at least 8 characters
+///                .set_admin(true)                // optional, defaults to false
+///                .secret("1234567890")           // optional, defaults to random
+///                .finalize()
+///                .unwrap();
+/// ```
+///
+/// Calling `UserBuilder#finalize()` will return a `Result<User, UserWithError>`. You
+/// can inspect `UserWithError#error` field to see what failed during initialization:
+///
+/// ```
+/// # use foxbox_users::users_db::{UserBuilder, UserBuilderError};
+/// let failing_user = UserBuilder::new()
+///                    .name("Miles")
+///                    .password("short")
+///                    .finalize()
+///                    .unwrap_err();
+///
+/// assert_eq!(failing_user.error, UserBuilderError::InvalidPassword);
+/// ```
+///
+/// All users have a `secret` field that can be set with `UserBuilder#secret()`
+/// although it will be automatically initialized to random if not provided.
+///
+/// ```
+/// # use foxbox_users::users_db::UserBuilder;
+/// let new_user = UserBuilder::new()
+///                .name("Miles")                  // mandatory, not empty
+///                .email("mbdyson@cyberdyne.com") // mandatory, not empty
+///                .password("s800t101")           // mandatory, at least 8 characters
+///                .set_admin(true)                // optional, defaults to false
+///                .finalize()
+///                .unwrap();
+///
+/// assert!(!new_user.secret.is_empty());
+/// ```
 #[derive(Debug)]
 pub struct UserBuilder {
     id: Option<i32>,
@@ -154,6 +228,8 @@ pub enum ReadFilter {
     IsAdmin(bool)
 }
 
+/// Provides [CRUD](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)
+/// (create, read, update and delete) operations for the user collection.
 pub struct UsersDb {
     // rusqlite::Connection already implements the Drop trait for the
     // inner connection so we don't need to manually close it. It will
@@ -172,6 +248,10 @@ fn get_db_environment() -> String {
 }
 
 impl UsersDb {
+    /// Opens the database and create it if not available yet.
+    ///
+    /// When the database instance exits the scope where it was created, it is
+    /// automatically closed.
     pub fn new() -> UsersDb {
         let connection = Connection::open(get_db_environment()).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
@@ -188,6 +268,18 @@ impl UsersDb {
         }
     }
 
+    /// Empties the complete database.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use foxbox_users::users_db::{UserBuilder, UsersDb, ReadFilter};
+    /// let db = UsersDb::new();
+    /// # db.create(&UserBuilder::new().name("John Doe").finalize().unwrap());
+    /// db.clear();
+    /// let users = db.read(ReadFilter::All).unwrap();
+    /// assert!(users.is_empty());
+    /// ```
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.connection.execute_batch(
             "DELETE FROM users;
@@ -196,6 +288,16 @@ impl UsersDb {
         )
     }
 
+    /// Creates a new user.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter, UserBuilder};
+    /// let admin = UserBuilder::new().name("admin").set_admin(true).finalize().unwrap();
+    /// let db = UsersDb::new();
+    /// assert!(db.create(&admin).is_ok());
+    /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
         match self.connection.execute("INSERT INTO users
             (name, email, password, secret, is_admin) VALUES ($1, $2, $3, $4, $5)",
@@ -211,6 +313,24 @@ impl UsersDb {
         }
     }
 
+    /// Retrieve filtered users from the database.
+    ///
+    /// # Example
+    ///
+    /// Retrieving and filtering users is easy thanks to the `ReadFilter` enum.
+    /// For instance, to get all users:
+    ///
+    /// ```
+    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
+    /// let all_users: Vec<User> = UsersDb::new().read(ReadFilter::All).unwrap();
+    /// ```
+    ///
+    /// And to quickly find administrators:
+    ///
+    /// ```
+    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
+    /// let admins: Vec<User> = UsersDb::new().read(ReadFilter::IsAdmin(true)).unwrap();
+    /// ```
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
         let mut stmt = try!(
             self.connection.prepare("SELECT * FROM users")
@@ -271,11 +391,13 @@ impl UsersDb {
         Ok(users)
     }
 
+    /// Replaces a pre-existent user, identified by its database id.
     pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
         self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5
             WHERE id=$6", &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin, &id])
     }
 
+    /// Removes a user identified by its id.
     pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
         self.connection.execute("DELETE FROM users WHERE id=$1", &[&id])
     }
