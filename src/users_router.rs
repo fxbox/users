@@ -72,10 +72,14 @@ impl AfterMiddleware for CORS {
 
         res.headers.set(headers::AccessControlAllowOrigin::Any);
         res.headers.set(headers::AccessControlAllowHeaders(
-                vec![UniCase("accept".to_owned()),
-                UniCase("content-type".to_owned())]));
+            vec![
+                UniCase(String::from("accept")),
+                UniCase(String::from("content-type"))
+            ]
+        ));
         res.headers.set(headers::AccessControlAllowMethods(
-                vec![Get,Head,Post,Delete,Options,Put,Patch]));
+            vec![Get,Head,Post,Delete,Options,Put,Patch]
+        ));
         Ok(res)
     }
 }
@@ -145,9 +149,7 @@ impl UsersRouter {
         let db = UsersDb::new();
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
-            return EndpointError::with(
-                        status::Gone, 410
-            );
+            return EndpointError::with(status::Gone, 410);
         }
 
         let mut payload = String::new();
@@ -161,9 +163,9 @@ impl UsersRouter {
         };
 
         let admin = match UserBuilder::new()
-            .name(&body.username)
-            .email(&body.email)
-            .password(&body.password)
+            .name(body.username)
+            .email(body.email)
+            .password(body.password)
             .set_admin(true)
             .finalize() {
                 Ok(user) => user,
@@ -198,9 +200,9 @@ impl UsersRouter {
             }) = auth;
             let something_is_missed =
                 username.is_empty() || match *maybe_password {
-                None => true,
-                Some(ref psw) => psw.is_empty()
-            };
+                    None => true,
+                    Some(ref psw) => psw.is_empty()
+                };
             if something_is_missed {
                 None
             } else {
@@ -374,9 +376,9 @@ describe! setup_tests {
         // Be sure we have an admin
         use super::super::users_db::UserBuilder;
         usersDb.create(&UserBuilder::new()
-                   .id(1).name("admin")
-                   .password("password!!")
-                   .email("admin@example.com")
+                   .id(1).name(String::from("admin"))
+                   .password(String::from("password!!"))
+                   .email(String::from("admin@example.com"))
                    .set_admin(true)
                    .finalize().unwrap()).ok();
         match request::post(endpoint, Headers::new(),
@@ -507,10 +509,10 @@ describe! login_tests {
         let usersDb = UsersDb::new();
         usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()
-                   .id(1).name("username")
-                   .password("password")
-                   .email("username@example.com")
-                   .secret("secret")
+                   .id(1).name(String::from("username"))
+                   .password(String::from("password"))
+                   .email(String::from("username@example.com"))
+                   .secret(String::from("secret"))
                    .finalize().unwrap()).ok();
         let endpoint = "http://localhost:3000/login";
     }
