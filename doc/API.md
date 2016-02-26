@@ -74,7 +74,7 @@ The currently-defined error responses are:
     * [POST /login](#post-login)
 
 ## POST /setup
-Allow to initiate the box by registering an admin user.
+Allow to initiate the box by registering an admin user. CORS is not allowed for this endpoint.
 ### Request
 ___Parameters___
 * email - Admin email.
