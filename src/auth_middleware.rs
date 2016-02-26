@@ -55,14 +55,21 @@ impl SessionToken {
 /// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
 /// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
 #[derive(Debug)]
-pub struct AuthEndpoint(pub Method, pub Vec<String>);
+pub struct AuthEndpoint(pub Vec<Method>, pub Vec<String>);
 
 impl PartialEq for AuthEndpoint {
     fn eq(&self, other: &AuthEndpoint) -> bool {
         let AuthEndpoint(ref self_method, ref self_path) = *self;
         let AuthEndpoint(ref other_method, ref other_path) = *other;
 
-        if self_method != other_method {
+        let mut contains_method = false;
+        for (_, method) in self_method.iter().enumerate() {
+            if other_method.contains(method) {
+                contains_method = true;
+            }
+        }
+
+        if !contains_method {
             return false;
         }
 
@@ -83,7 +90,8 @@ struct AuthHandler<H: Handler> {
 impl<H: Handler> Handler for AuthHandler<H> {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
         {
-            let endpoint = AuthEndpoint(req.method.clone(), req.url.path.clone());
+            let endpoint = AuthEndpoint(vec![req.method.clone()],
+                                        req.url.path.clone());
             // If this is not an authenticated endpoint, just proceed with the
             // original request.
             if !self.auth_endpoints.contains(&endpoint) {
@@ -176,12 +184,14 @@ describe! auth_middleware_tests {
 
         let mut router = Router::new();
         router.get("/authenticated", not_implemented);
+        router.delete("/authenticated", not_implemented);
         router.get("/not_authenticated", not_implemented);
 
         let mut chain = Chain::new(router);
         chain.around(AuthMiddleware {
             auth_endpoints: vec![
-                AuthEndpoint(Method::Get, vec!["authenticated".to_owned()])
+                AuthEndpoint(vec![Method::Get, Method::Delete],
+                             vec!["authenticated".to_owned()])
             ]
         });
     }
@@ -235,11 +245,19 @@ describe! auth_middleware_tests {
         let mut headers = Headers::new();
         headers.set(Authorization(Bearer { token: signed.to_owned() }));
         match request::get("http://localhost:3000/authenticated",
-                           headers, &chain) {
+                           headers.clone(), &chain) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        };
+        match request::delete("http://localhost:3000/authenticated",
+                              headers, &chain) {
             Ok(res) => {
                 assert_eq!(res.status.unwrap(), Status::NotImplemented)
             },
             Err(_) => assert!(false)
         }
+
     }
 }
