@@ -54,13 +54,36 @@ impl SessionToken {
 ///
 /// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
 /// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
+///
+/// `AuthEndpoints` take a vector of methods and a string representing the path
+/// of the endpoint to be authenticated. This path can contain wildcard
+/// parts. For example:
+///
+/// AuthEndpoint(vec![Method::Get, Method::Post], "/a/path/:foo/bar/:baz")
+///
+/// would match with a GET or POST request to /a/path/whatever/bar/whatever
 #[derive(Debug)]
-pub struct AuthEndpoint(pub Vec<Method>, pub Vec<String>);
+pub struct AuthEndpoint(pub Vec<Method>, pub String);
 
 impl PartialEq for AuthEndpoint {
     fn eq(&self, other: &AuthEndpoint) -> bool {
         let AuthEndpoint(ref self_method, ref self_path) = *self;
         let AuthEndpoint(ref other_method, ref other_path) = *other;
+
+        let self_path: Vec<&str> = if self_path.starts_with('/') {
+            self_path[1..].split('/').collect()
+        } else {
+            self_path[0..].split('/').collect()
+        };
+        let other_path: Vec<&str> = if other_path.starts_with('/') {
+            other_path[1..].split('/').collect()
+        } else {
+            other_path[0..].split('/').collect()
+        };
+
+        if self_path.len() != other_path.len() {
+            return false;
+        }
 
         let mut contains_method = false;
         for (_, method) in self_method.iter().enumerate() {
@@ -74,7 +97,7 @@ impl PartialEq for AuthEndpoint {
         }
 
         for (i, path) in self_path.iter().enumerate() {
-            if &other_path[i] != path && "*" != path {
+            if &other_path[i] != path && !path.starts_with(':') {
                 return false;
             }
         }
@@ -91,7 +114,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
         {
             let endpoint = AuthEndpoint(vec![req.method.clone()],
-                                        req.url.path.clone());
+                                        req.url.path.join("/"));
             // If this is not an authenticated endpoint, just proceed with the
             // original request.
             if !self.auth_endpoints.contains(&endpoint) {
@@ -184,6 +207,7 @@ describe! auth_middleware_tests {
 
         let mut router = Router::new();
         router.get("/authenticated", not_implemented);
+        router.get("/authenticated/:foo/bar/:baz", not_implemented);
         router.delete("/authenticated", not_implemented);
         router.get("/not_authenticated", not_implemented);
 
@@ -191,7 +215,9 @@ describe! auth_middleware_tests {
         chain.around(AuthMiddleware {
             auth_endpoints: vec![
                 AuthEndpoint(vec![Method::Get, Method::Delete],
-                             vec!["authenticated".to_owned()])
+                             "/authenticated".to_owned()),
+                AuthEndpoint(vec![Method::Get],
+                             "/authenticated/:foo/bar/:baz".to_owned())
             ]
         });
     }
@@ -245,6 +271,13 @@ describe! auth_middleware_tests {
         let mut headers = Headers::new();
         headers.set(Authorization(Bearer { token: signed.to_owned() }));
         match request::get("http://localhost:3000/authenticated",
+                           headers.clone(), &chain) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        };
+        match request::get("http://localhost:3000/authenticated/afoo/bar/baz",
                            headers.clone(), &chain) {
             Ok(res) => {
                 assert_eq!(res.status.unwrap(), Status::NotImplemented)
