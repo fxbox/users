@@ -74,6 +74,7 @@ impl AfterMiddleware for CORS {
         res.headers.set(headers::AccessControlAllowHeaders(
             vec![
                 UniCase(String::from("accept")),
+                UniCase(String::from("authorization")),
                 UniCase(String::from("content-type"))
             ]
         ));
