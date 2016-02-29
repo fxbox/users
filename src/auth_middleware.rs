@@ -97,7 +97,7 @@ impl PartialEq for AuthEndpoint {
         }
 
         for (i, path) in self_path.iter().enumerate() {
-            if &other_path[i] != path && !path.starts_with(':') {
+            if &other_path[i] != path && !other_path[i].starts_with(':') {
                 return false;
             }
         }
@@ -239,6 +239,20 @@ describe! auth_middleware_tests {
             Err(err) => {
                 assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
             }
+        };
+        match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
+                           Headers::new(), &chain) {
+            Ok(_) => assert!(false),
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+            }
+        };
+        match request::delete("http://localhost:3000/authenticated",
+                              Headers::new(), &chain) {
+            Ok(_) => assert!(false),
+            Err(err) => {
+                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+            }
         }
     }
 
@@ -277,7 +291,7 @@ describe! auth_middleware_tests {
             },
             Err(_) => assert!(false)
         };
-        match request::get("http://localhost:3000/authenticated/afoo/bar/baz",
+        match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
                            headers.clone(), &chain) {
             Ok(res) => {
                 assert_eq!(res.status.unwrap(), Status::NotImplemented)
@@ -291,6 +305,5 @@ describe! auth_middleware_tests {
             },
             Err(_) => assert!(false)
         }
-
     }
 }
