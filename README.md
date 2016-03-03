@@ -1,8 +1,8 @@
 [![Build Status](https://travis-ci.org/fxbox/users.svg?branch=master)](https://travis-ci.org/fxbox/users)
 [![License](https://img.shields.io/badge/license-MPL2-blue.svg)](https://raw.githubusercontent.com/fxbox/users/master/LICENSE)
 
-# FoxBox Users
-This crate implements a user management and authentication library for the first iteration of [FoxBox](https://github.com/fxbox/foxbox). It intentionally allows only the registration and authentication of a single user, although the database module is ready for a multi-user scenario. The crate is being built with FoxBox's requirements in mind, but it is completely independent from it and could be reused and extended for other purposes.
+# Project Link Users
+This crate implements a user management and authentication library for the first iteration of [Project Link](https://wiki.mozilla.org/Project_Link). It is currently used by [FoxBox](https://github.com/fxbox/foxbox), the core of Project Link. It intentionally allows only the registration and authentication of a single user, although the database module is ready for a multi-user scenario. The crate is being built with Project Link's requirements in mind, but it is completely independent from it and could be reused and extended for other purposes.
 
 The main modules that this crate exposes are:
 
