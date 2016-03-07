@@ -240,23 +240,17 @@ pub struct UsersDb {
     connection: Connection
 }
 
-#[cfg(test)]
-fn get_db_environment() -> String {
-    "./users_db_test.sqlite".to_owned()
-}
-
-#[cfg(not(test))]
-fn get_db_environment() -> String {
-    "./users_db.sqlite".to_owned()
-}
-
 impl UsersDb {
     /// Opens the database and create it if not available yet.
     ///
     /// When the database instance exits the scope where it was created, it is
     /// automatically closed.
-    pub fn new() -> UsersDb {
-        let connection = Connection::open(get_db_environment()).unwrap();
+    pub fn new(db_name: Option<String>) -> UsersDb {
+        let db_name = match db_name {
+            Some(name) => name,
+            None => "./users_db.sqlite".to_owned()
+        };
+        let connection = Connection::open(db_name).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL UNIQUE,
@@ -277,7 +271,7 @@ impl UsersDb {
     ///
     /// ```
     /// # use foxbox_users::users_db::{UserBuilder, UsersDb, ReadFilter};
-    /// let db = UsersDb::new();
+    /// let db = UsersDb::new(Some("./users_db.sqlite".to_owned()));
     /// # db.create(&UserBuilder::new().name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
     /// let users = db.read(ReadFilter::All).unwrap();
@@ -298,7 +292,7 @@ impl UsersDb {
     /// ```
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter, UserBuilder};
     /// let admin = UserBuilder::new().name(String::from("admin")).set_admin(true).finalize().unwrap();
-    /// let db = UsersDb::new();
+    /// let db = UsersDb::new(Some("./users_db.sqlite".to_owned()));
     /// assert!(db.create(&admin).is_ok());
     /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
@@ -325,14 +319,16 @@ impl UsersDb {
     ///
     /// ```
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
-    /// let all_users: Vec<User> = UsersDb::new().read(ReadFilter::All).unwrap();
+    /// let all_users: Vec<User> =
+    ///     UsersDb::new(Some("./users_db.sqlite".to_owned())).read(ReadFilter::All).unwrap();
     /// ```
     ///
     /// And to quickly find administrators:
     ///
     /// ```
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
-    /// let admins: Vec<User> = UsersDb::new().read(ReadFilter::IsAdmin(true)).unwrap();
+    /// let admins: Vec<User> =
+    ///     UsersDb::new(Some("./users_db.sqlite".to_owned())).read(ReadFilter::IsAdmin(true)).unwrap();
     /// ```
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
         let mut stmt = try!(
@@ -462,7 +458,7 @@ describe! user_builder_tests {
 #[cfg(test)]
 describe! user_db_tests {
     before_each {
-        let usersDb = UsersDb::new();
+        let usersDb = UsersDb::new(Some("./users_db.sqlite".to_owned()));
         usersDb.clear().ok();
 
         let defaultUsers = vec![
