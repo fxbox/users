@@ -97,6 +97,7 @@ You should fork the main repo and create pull requests against feature branches
 of your fork. If you need some guidance with this see:
  - https://guides.github.com/introduction/flow/
  - http://scottchacon.com/2011/08/31/github-flow.html
+
 ### Setup
 ```bash
 $ git clone git@github.com:<username>/users.git
