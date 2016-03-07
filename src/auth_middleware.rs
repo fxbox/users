@@ -124,25 +124,8 @@ impl<H: Handler> Handler for AuthHandler<H> {
         // Otherwise, we need to verify the authorization header.
         match req.headers.get::<headers::Authorization<headers::Bearer>>() {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                let token = match Token::<Header, SessionClaims>::parse(token) {
-                    Ok(token) => token,
-                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
-                };
-
-                // To verify the token we need to get the secret associated to
-                // user id contained in the token claim.
-                let db = UsersDb::new();
-                match db.read(ReadFilter::Id(token.claims.id)) {
-                    Ok(users) => {
-                        if users.len() != 1 {
-                            return EndpointError::with(status::Unauthorized, 401)
-                        }
-                        if !token.verify(users[0].secret.to_owned().as_bytes(),
-                                         Sha256::new()) {
-                            return EndpointError::with(status::Unauthorized, 401)
-                        }
-                    },
-                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
+                if let Err(_) = AuthMiddleware::verify(token) {
+                    return EndpointError::with(status::Unauthorized, 401)
                 }
             },
             _ => return EndpointError::with(status::Unauthorized, 401)
@@ -188,6 +171,39 @@ impl AroundMiddleware for AuthMiddleware {
             handler: handler,
             auth_endpoints: self.auth_endpoints
         }) as Box<Handler>
+    }
+}
+
+impl AuthMiddleware {
+    pub fn verify(token: &str) -> Result<(), ()> {
+        if token.is_empty() {
+            return Err(());
+        }
+
+        let token = match Token::<Header, SessionClaims>::parse(token) {
+            Ok(token) => token,
+            Err(_) => return Err(())
+        };
+
+        // To verify the token we need to get the secret associated to
+        // user id contained in the token claim.
+        let db = UsersDb::new();
+        match db.read(ReadFilter::Id(token.claims.id)) {
+            Ok(users) => {
+                if users.len() != 1 {
+                    return Err(());
+                }
+                if !token.verify(users[0].secret.to_owned().as_bytes(),
+                                 Sha256::new()) {
+                    return Err(());
+                }
+            },
+            Err(_) => {
+                return Err(());
+            }
+        };
+
+        Ok(())
     }
 }
 
