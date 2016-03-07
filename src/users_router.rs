@@ -304,7 +304,7 @@ describe! setup_tests {
         use iron::Headers;
         use iron::status::Status;
         use iron_test::request;
-        use super::super::users_db::UsersDb;
+        use super::super::users_db::{UsersDb, remove_test_db};
 
         let router = UsersRouter::init();
         let usersDb = UsersDb::new();
@@ -360,7 +360,7 @@ describe! setup_tests {
             assert_eq!(admins[0].email, "username@domain.com");
         } else {
             assert!(false);
-        }
+        };
     }
 
     it "should respond 410 Gone if an admin account exists" {
@@ -397,7 +397,7 @@ describe! setup_tests {
                 let json = extract_body_to::<ErrorBody>(response).unwrap();
                 assert_eq!(json.errno, 410);
             }
-        }
+        };
     }
 
     it "should respond 400 BadRequest, errno 100 if username is missing" {
@@ -483,12 +483,16 @@ describe! setup_tests {
             }
         };
     }
+
+    after_each {
+        remove_test_db();
+    }
 }
 
 #[cfg(test)]
 describe! login_tests {
     before_each {
-        use super::super::users_db::{UsersDb, UserBuilder};
+        use super::super::users_db::{UsersDb, UserBuilder, remove_test_db};
         use iron::prelude::Response;
         use iron::Headers;
         #[allow(unused_imports)]
@@ -534,7 +538,7 @@ describe! login_tests {
             assert_eq!(json.errno, 103);
         } else {
             assert!(false);
-        }
+        };
     }
 
     it "should respond with a generic 400 Bad Request for requests missing password" {
@@ -553,7 +557,7 @@ describe! login_tests {
             assert_eq!(json.errno, 103);
         } else {
             assert!(false);
-        }
+        };
     }
 
     it "should respond with a 400 Bad Request for requests missing the authorization password" {
@@ -567,7 +571,7 @@ describe! login_tests {
             assert_eq!(json.errno, 103);
         } else {
             assert!(false);
-        }
+        };
     }
 
     it "should respond with a 401 Unauthorized for invalid credentials" {
@@ -584,7 +588,7 @@ describe! login_tests {
             assert_eq!(response.status.unwrap(), Status::Unauthorized);
         } else {
             assert!(false);
-        }
+        };
     }
 
     it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
@@ -609,6 +613,9 @@ describe! login_tests {
             assert_eq!(claims.name, "username");
         } else {
             assert!(false);
-        }
+        };
+    }
+    after_each {
+        remove_test_db();
     }
 }
