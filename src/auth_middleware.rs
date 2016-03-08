@@ -131,7 +131,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
 
                 // To verify the token we need to get the secret associated to
                 // user id contained in the token claim.
-                let db = UsersDb::new();
+                let db = UsersDb::new(None);
                 match db.read(ReadFilter::Id(token.claims.id)) {
                     Ok(users) => {
                         if users.len() != 1 {
@@ -263,7 +263,7 @@ describe! auth_middleware_tests {
         use crypto::sha2::Sha256;
         use jwt;
 
-        let db = UsersDb::new();
+        let db = UsersDb::new(Some("./users_db.sqlite".to_owned()));
         db.clear().ok();
         let user = UserBuilder::new()
             .id(1).name(String::from("username"))

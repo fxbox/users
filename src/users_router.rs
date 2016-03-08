@@ -147,7 +147,7 @@ impl UsersRouter {
 
         // This endpoint should be disabled and return error 410 (Gone)
         // if there is any admin user already configured.
-        let db = UsersDb::new();
+        let db = UsersDb::new(None);
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
             return EndpointError::with(status::Gone, 410);
@@ -218,7 +218,7 @@ impl UsersRouter {
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
             if let Some((username, password)) = credentials_from_header(auth) {
-                let users_db = UsersDb::new();
+                let users_db = UsersDb::new(None);
                 let users = match users_db.read(
                     ReadFilter::Credentials(username, password)) {
                     Ok(users) => users,
@@ -307,7 +307,7 @@ describe! setup_tests {
         use super::super::users_db::UsersDb;
 
         let router = UsersRouter::init();
-        let usersDb = UsersDb::new();
+        let usersDb = UsersDb::new(Some("./users_db.sqlite".to_owned()));
         usersDb.clear().ok();
 
         let endpoint = "http://localhost:3000/setup";
@@ -507,7 +507,7 @@ describe! login_tests {
         }
 
         let router = UsersRouter::init();
-        let usersDb = UsersDb::new();
+        let usersDb = UsersDb::new(Some("./users_db.sqlite".to_owned()));
         usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()
                    .id(1).name(String::from("username"))
