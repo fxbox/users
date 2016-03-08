@@ -12,14 +12,14 @@ The main modules that this crate exposes are:
 
 ## Usage
 ### Rust
-Currently v1.8.x nightly is required
+Currently v1.9.x nightly is required
 ```bash
 $ rustc -V
-rustc 1.8.0-nightly (c92e910c1 2016-02-21)
+rustc 1.9.0-nightly (998a6720b 2016-03-07)
 ```
 It's recommended that you use [`multirust`](https://github.com/brson/multirust) to install and switch between versions of Rust.
 ```bash
-$ multirust override nightly-2016-02-22
+$ multirust override nightly-2016-03-07
 ```
 ### Exposing the HTTP API
 ```rust
