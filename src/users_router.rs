@@ -145,10 +145,11 @@ impl LoginResponse {
 /// extern crate foxbox_users;
 ///
 /// fn main() {
-///     use foxbox_users::users_router::UsersRouter;
+///     use foxbox_users::Manager;
 ///     use iron::prelude::{Chain, Iron};
 ///
-///     let router = UsersRouter::init();
+///     let manager = Manager::new("UsersRouter_0.sqlite");
+///     let router = manager.get_router_chain();
 ///     let mut chain = Chain::new(router);
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
@@ -158,7 +159,7 @@ impl LoginResponse {
 pub struct UsersRouter;
 
 impl UsersRouter {
-    fn setup(req: &mut Request) -> IronResult<Response> {
+    fn setup(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
             username: String,
@@ -168,7 +169,7 @@ impl UsersRouter {
 
         // This endpoint should be disabled and return error 410 (Gone)
         // if there is any admin user already configured.
-        let db = UsersDb::new();
+        let db = UsersDb::new(db_path);
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
             return EndpointError::with(status::Gone, 410);
@@ -210,7 +211,7 @@ impl UsersRouter {
         }
     }
 
-    fn login(req: &mut Request) -> IronResult<Response> {
+    fn login(req: &mut Request, db_path: &str) -> IronResult<Response> {
 
         // Return Some pair of valid credentials if both username and password
         // are provided or None elsewhere.
@@ -239,7 +240,7 @@ impl UsersRouter {
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
             if let Some((username, password)) = credentials_from_header(auth) {
-                let users_db = UsersDb::new();
+                let users_db = UsersDb::new(db_path);
                 let users = match users_db.read(
                     ReadFilter::Credentials(username, password)) {
                     Ok(users) => users,
@@ -260,11 +261,17 @@ impl UsersRouter {
     }
 
     /// Creates the Iron user router middleware.
-    pub fn init() -> super::iron::middleware::Chain {
+    pub fn init(db_path: &str) -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
-        router.post("/setup", UsersRouter::setup);
-        router.post("/login", UsersRouter::login);
+        let data = String::from(db_path);
+        router.post("/setup", move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::setup(req, &data)
+        });
+        let data = String::from(db_path);
+        router.post("/login", move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::login(req, &data)
+        });
 
         let mut chain = Chain::new(router);
         chain.link_after(CORS);
@@ -278,8 +285,11 @@ describe! cors_tests {
     before_each {
         use iron::{headers, Headers};
         use iron_test::request;
+        use super::super::users_db::get_db_environment;
+        use super::super::Manager;
 
-        let router = UsersRouter::init();
+        let manager = Manager::new(&get_db_environment());
+        let router = manager.get_router_chain();
     }
 
     it "should get the appropriate CORS headers" {
@@ -343,10 +353,12 @@ describe! setup_tests {
         use iron::Headers;
         use iron::status::Status;
         use iron_test::request;
-        use super::super::users_db::{UsersDb, remove_test_db};
+        use super::super::users_db::{ get_db_environment, remove_test_db };
+        use super::super::Manager;
 
-        let router = UsersRouter::init();
-        let usersDb = UsersDb::new();
+        let manager = Manager::new(&get_db_environment());
+        let router = manager.get_router_chain();
+        let usersDb = manager.get_db();
         usersDb.clear().ok();
 
         let endpoint = "http://localhost:3000/setup";
@@ -531,7 +543,10 @@ describe! setup_tests {
 #[cfg(test)]
 describe! login_tests {
     before_each {
-        use super::super::users_db::{UsersDb, UserBuilder, remove_test_db};
+        use super::super::users_db::{UserBuilder,
+                                     remove_test_db,
+                                     get_db_environment};
+        use super::super::Manager;
         use iron::prelude::Response;
         use iron::Headers;
         #[allow(unused_imports)]
@@ -549,8 +564,9 @@ describe! login_tests {
             json::decode(&extract_body_to_string(response))
         }
 
-        let router = UsersRouter::init();
-        let usersDb = UsersDb::new();
+        let manager = Manager::new(&get_db_environment());
+        let router = manager.get_router_chain();
+        let usersDb = manager.get_db();
         usersDb.clear().ok();
         usersDb.create(&UserBuilder::new()
                    .id(1).name(String::from("username"))
@@ -654,6 +670,7 @@ describe! login_tests {
             assert!(false);
         };
     }
+
     after_each {
         remove_test_db();
     }

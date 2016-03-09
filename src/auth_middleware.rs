@@ -107,6 +107,7 @@ impl PartialEq for AuthEndpoint {
 
 struct AuthHandler<H: Handler> {
     handler: H,
+    auth_db_file: String,
     auth_endpoints: Vec<AuthEndpoint>
 }
 
@@ -124,7 +125,8 @@ impl<H: Handler> Handler for AuthHandler<H> {
         // Otherwise, we need to verify the authorization header.
         match req.headers.get::<headers::Authorization<headers::Bearer>>() {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                if let Err(_) = AuthMiddleware::verify(token) {
+                if let Err(_) = AuthMiddleware::verify(token,
+                                                       &self.auth_db_file) {
                     return EndpointError::with(status::Unauthorized, 401)
                 }
             },
@@ -146,15 +148,13 @@ impl<H: Handler> Handler for AuthHandler<H> {
 /// extern crate foxbox_users;
 ///
 /// fn main() {
-///     use foxbox_users::users_router::UsersRouter;
-///     use foxbox_users::auth_middleware::AuthMiddleware;
+///     use foxbox_users::Manager;
 ///     use iron::prelude::{Chain, Iron};
 ///
-///     let router = UsersRouter::init();
+///     let manager = Manager::new("AuthMiddleware_0.sqlite");
+///     let router = manager.get_router_chain();
 ///     let mut chain = Chain::new(router);
-///     chain.around(AuthMiddleware{
-///         auth_endpoints: vec![]
-///     });
+///     chain.around(manager.get_middleware(vec![]));
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
 /// # }
@@ -162,20 +162,22 @@ impl<H: Handler> Handler for AuthHandler<H> {
 /// ```
 pub struct AuthMiddleware {
     /// `Vec<AuthEndpoint>` containing the set of endpoints to be authenticated.
-    pub auth_endpoints: Vec<AuthEndpoint>
+    pub auth_endpoints: Vec<AuthEndpoint>,
+    pub auth_db_file: String,
 }
 
 impl AroundMiddleware for AuthMiddleware {
     fn around(self, handler: Box<Handler>) -> Box<Handler> {
         Box::new(AuthHandler {
             handler: handler,
-            auth_endpoints: self.auth_endpoints
+            auth_endpoints: self.auth_endpoints,
+            auth_db_file: self.auth_db_file.clone(),
         }) as Box<Handler>
     }
 }
 
 impl AuthMiddleware {
-    pub fn verify(token: &str) -> Result<(), ()> {
+    pub fn verify(token: &str, auth_db_file: &str) -> Result<(), ()> {
         if token.is_empty() {
             return Err(());
         }
@@ -187,7 +189,7 @@ impl AuthMiddleware {
 
         // To verify the token we need to get the secret associated to
         // user id contained in the token claim.
-        let db = UsersDb::new();
+        let db = UsersDb::new(auth_db_file);
         match db.read(ReadFilter::Id(token.claims.id)) {
             Ok(users) => {
                 if users.len() != 1 {
@@ -216,7 +218,10 @@ describe! auth_middleware_tests {
         use iron::status::Status;
         use iron_test::request;
         use router::Router;
+        use super::super::users_db::get_db_environment;
+        use super::super::Manager;
 
+        let manager = Manager::new(&get_db_environment());
         fn not_implemented(_: &mut Request) -> IronResult<Response> {
             Ok(Response::with(Status::NotImplemented))
         }
@@ -228,14 +233,12 @@ describe! auth_middleware_tests {
         router.get("/not_authenticated", not_implemented);
 
         let mut chain = Chain::new(router);
-        chain.around(AuthMiddleware {
-            auth_endpoints: vec![
-                AuthEndpoint(vec![Method::Get, Method::Delete],
-                             "/authenticated".to_owned()),
-                AuthEndpoint(vec![Method::Get],
-                             "/authenticated/:foo/bar/:baz".to_owned())
-            ]
-        });
+        chain.around(manager.get_middleware(
+            vec![AuthEndpoint(vec![Method::Get, Method::Delete],
+                              "/authenticated".to_owned()),
+                 AuthEndpoint(vec![Method::Get],
+                              "/authenticated/:foo/bar/:baz".to_owned())]
+                ));
     }
 
     it "should allow request to not authenticated endpoint" {
@@ -273,13 +276,14 @@ describe! auth_middleware_tests {
     }
 
     it "should allow request to authenticated endpoint" {
-        use super::super::users_db::{UserBuilder, UsersDb, remove_test_db};
+        use super::super::UserBuilder;
+        use super::super::users_db::remove_test_db;
 
         use iron::headers::{Authorization, Bearer};
         use crypto::sha2::Sha256;
         use jwt;
 
-        let db = UsersDb::new();
+        let db = manager.get_db();
         db.clear().ok();
         let user = UserBuilder::new()
             .id(1).name(String::from("username"))

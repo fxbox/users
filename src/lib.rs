@@ -21,7 +21,49 @@ extern crate unicase;
 extern crate jwt;
 extern crate rand;
 
-pub mod users_db;
-pub mod users_router;
-pub mod auth_middleware;
+mod users_db;
+mod users_router;
+mod auth_middleware;
 mod errors;
+
+pub use users_db::UsersDb as UsersDb;
+pub use users_db::UserBuilder as UserBuilder;
+pub use users_db::UserBuilderError as UserBuilderError;
+pub use users_db::ReadFilter as ReadFilter;
+pub use users_db::User as User;
+pub use users_router::UsersRouter as UsersRouter;
+pub use auth_middleware::AuthMiddleware as AuthMiddleware;
+pub use auth_middleware::AuthEndpoint as AuthEndpoint;
+
+pub struct Manager {
+    db_file_path: String,
+}
+
+impl Manager {
+
+    /// Create the Manager. The database with be stored at
+    /// `db_file_path`.
+    pub fn new(db_file_path: &str) -> Self {
+        Manager { db_file_path: String::from(db_file_path) }
+    }
+
+    /// Get a new database connection.
+    pub fn get_db(&self) -> UsersDb {
+        UsersDb::new(&self.db_file_path)
+    }
+
+    /// Get a new router chain
+    pub fn get_router_chain(&self) -> iron::middleware::Chain {
+        UsersRouter::init(&self.db_file_path)
+    }
+
+    pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)
+                          -> AuthMiddleware {
+        AuthMiddleware { auth_endpoints: auth_endpoints,
+                         auth_db_file: self.db_file_path.to_owned() }
+    }
+
+    pub fn verify_token(&self, token: &str) -> Result<(), ()> {
+        AuthMiddleware::verify(token, &self.db_file_path)
+    }
+}
