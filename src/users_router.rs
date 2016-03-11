@@ -303,6 +303,24 @@ describe! cors_tests {
         }
     }
 
+    it "should get the appropriate CORS headers even in case of error" {
+        match request::post("http://localhost:3000/login",
+                            Headers::new(),
+                            "{}",
+                            &router) {
+            Ok(_) => {
+                assert!(false)
+            },
+            Err(err) => {
+                let headers = &err.response.headers;
+                assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                assert!(headers.has::<headers::AccessControlAllowMethods>());
+            }
+
+        }
+    }
+
     it "should not get CORS headers" {
         match request::options("http://localhost:3000/setup", Headers::new(),
                                &router) {
