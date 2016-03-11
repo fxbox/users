@@ -12,10 +12,10 @@
 //! can be found in the GitHub repository.
 
 use super::auth_middleware::SessionToken;
-use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
+use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 use super::errors::*;
 
-use iron::{AfterMiddleware, headers, status};
+use iron::{ AfterMiddleware, headers, status };
 use iron::headers::{Authorization, Basic};
 use iron::method::Method;
 use iron::method::Method::*;
@@ -26,37 +26,42 @@ use unicase::UniCase;
 
 use std::io::Read;
 
-type Endpoint = (Method, &'static[&'static str]);
+type Endpoint = (&'static[Method], &'static str);
 
 struct CORS;
 
 impl CORS {
     // Only endpoints listed here will allow CORS.
-    // Endpoints containing a variable path part can use '*' like in:
-    // &["bar", "*"] for a URL like https://foo.com/bar/123
+    // Endpoints containing a variable path part can use ':foo' like in:
+    // "/foo/:bar" for a URL like https://domain.com/foo/123 where 123 is
+    // variable.
     pub const ENDPOINTS: &'static[Endpoint] = &[
-        (Method::Post, &["login"])
+        (&[Method::Post], "login")
     ];
-}
 
-impl AfterMiddleware for CORS {
-    fn after(&self, req: &mut Request, mut res: Response)
-        -> IronResult<Response> {
-
+    pub fn is_allowed(req: &mut Request) -> bool {
         let mut is_cors_endpoint = false;
         for endpoint in CORS::ENDPOINTS {
-            let (ref method, path) = *endpoint;
-            if req.method != *method &&
+            let (ref methods, path) = *endpoint;
+
+            if !methods.contains(&req.method) &&
                req.method != Method::Options {
                 continue;
             }
+
+            let path: Vec<&str> = if path.starts_with('/') {
+                path[1..].split('/').collect()
+            } else {
+                path[0..].split('/').collect()
+            };
+
             if path.len() != req.url.path.len() {
                 continue;
             }
-            for (i, path) in path.iter().enumerate() {
+
+            for (i, req_path) in req.url.path.iter().enumerate() {
                 is_cors_endpoint = false;
-                if req.url.path[i] != path.to_owned() &&
-                   "*" != path.to_owned() {
+                if req_path != path[i] && !path[i].starts_with(':') {
                     break;
                 }
                 is_cors_endpoint = true;
@@ -65,11 +70,10 @@ impl AfterMiddleware for CORS {
                 break;
             }
         }
+        is_cors_endpoint
+    }
 
-        if !is_cors_endpoint {
-            return Ok(res);
-        }
-
+    pub fn add_headers(res: &mut Response) {
         res.headers.set(headers::AccessControlAllowOrigin::Any);
         res.headers.set(headers::AccessControlAllowHeaders(
             vec![
@@ -79,9 +83,26 @@ impl AfterMiddleware for CORS {
             ]
         ));
         res.headers.set(headers::AccessControlAllowMethods(
-            vec![Get,Head,Post,Delete,Options,Put,Patch]
+            vec![Get, Post, Put]
         ));
+    }
+}
+
+impl AfterMiddleware for CORS {
+    fn after(&self, req: &mut Request, mut res: Response)
+        -> IronResult<Response> {
+        if CORS::is_allowed(req) {
+            CORS::add_headers(&mut res);
+        }
         Ok(res)
+    }
+
+    fn catch(&self, req: &mut Request, mut err: IronError)
+        -> IronResult<Response> {
+        if CORS::is_allowed(req) {
+            CORS::add_headers(&mut err.response);
+        }
+        Err(err)
     }
 }
 
@@ -267,7 +288,7 @@ describe! cors_tests {
         for endpoint in CORS::ENDPOINTS {
             let (_, path) = *endpoint;
             let path = "http://localhost:3000/".to_owned() +
-                       &(path.join("/").replace("*", "foo"));
+                       &(path.replace(":", "foo"));
             match request::options(&path, Headers::new(), &router) {
                 Ok(res) => {
                     let headers = &res.headers;
@@ -279,6 +300,24 @@ describe! cors_tests {
                     assert!(false)
                 }
             }
+        }
+    }
+
+    it "should get the appropriate CORS headers even in case of error" {
+        match request::post("http://localhost:3000/login",
+                            Headers::new(),
+                            "{}",
+                            &router) {
+            Ok(_) => {
+                assert!(false)
+            },
+            Err(err) => {
+                let headers = &err.response.headers;
+                assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                assert!(headers.has::<headers::AccessControlAllowMethods>());
+            }
+
         }
     }
 
