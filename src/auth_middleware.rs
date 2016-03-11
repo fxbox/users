@@ -273,7 +273,7 @@ describe! auth_middleware_tests {
     }
 
     it "should allow request to authenticated endpoint" {
-        use super::super::users_db::{UserBuilder, UsersDb};
+        use super::super::users_db::{UserBuilder, UsersDb, remove_test_db};
 
         use iron::headers::{Authorization, Bearer};
         use crypto::sha2::Sha256;
@@ -321,5 +321,6 @@ describe! auth_middleware_tests {
             },
             Err(_) => assert!(false)
         }
+        remove_test_db();
     }
 }

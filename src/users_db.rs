@@ -240,9 +240,14 @@ pub struct UsersDb {
     connection: Connection
 }
 
+
 #[cfg(test)]
-fn get_db_environment() -> String {
-    "./users_db_test.sqlite".to_owned()
+pub fn get_db_environment() -> String {
+    use libc::getpid;
+    use std::thread;
+    let tid = format!("{:?}", thread::current());
+    format!("./users_db_test-{}-{}.sqlite", unsafe { getpid() },
+            tid.replace("/", "42"))
 }
 
 #[cfg(not(test))]
@@ -275,7 +280,7 @@ impl UsersDb {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # use foxbox_users::users_db::{UserBuilder, UsersDb, ReadFilter};
     /// let db = UsersDb::new();
     /// # db.create(&UserBuilder::new().name(String::from("John Doe")).finalize().unwrap());
@@ -295,7 +300,7 @@ impl UsersDb {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter, UserBuilder};
     /// let admin = UserBuilder::new().name(String::from("admin")).set_admin(true).finalize().unwrap();
     /// let db = UsersDb::new();
@@ -323,14 +328,14 @@ impl UsersDb {
     /// Retrieving and filtering users is easy thanks to the `ReadFilter` enum.
     /// For instance, to get all users:
     ///
-    /// ```
+    /// ```no_run
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
     /// let all_users: Vec<User> = UsersDb::new().read(ReadFilter::All).unwrap();
     /// ```
     ///
     /// And to quickly find administrators:
     ///
-    /// ```
+    /// ```no_run
     /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
     /// let admins: Vec<User> = UsersDb::new().read(ReadFilter::IsAdmin(true)).unwrap();
     /// ```
@@ -456,6 +461,18 @@ describe! user_builder_tests {
             .name(String::from(""))
             .finalize()
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+pub fn remove_test_db() {
+    use std::path::Path;
+    use std::fs;
+
+    let dbfile = get_db_environment();
+    match fs::remove_file(Path::new(&dbfile)) {
+        Err(err) => panic!("Error {} cleaning up {}", err, dbfile),
+        _ => assert!(true),
     }
 }
 
@@ -630,5 +647,9 @@ describe! user_db_tests {
 
         assert_eq!(admins.len(), 1);
         assert_eq!(admins[0].name, admin.name);
+    }
+
+    after_each {
+        self::remove_test_db();
     }
 }
