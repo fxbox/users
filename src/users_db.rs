@@ -32,8 +32,7 @@
 //! can inspect `UserWithError#error` attribute to see what failed during initialization.
 //!
 
-use crypto::digest::Digest;
-use crypto::md5::Md5;
+use pwhash::bcrypt;
 use libc::{c_int};
 use rusqlite::{self, Connection};
 
@@ -173,9 +172,12 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::InvalidPassword);
             return self;
         }
-        let mut md5 = Md5::new();
-        md5.input_str(&escape(&password));
-        self.password = md5.result_str();
+        match bcrypt::hash(&password) {
+            Ok(hash) =>
+                self.password = hash,
+            Err(_) =>
+                self.error = Some(UserBuilderError::InvalidPassword),
+        }
         self
     }
 
@@ -356,28 +358,25 @@ impl UsersDb {
                 );
                 try!(stmt.query(&[&id]))
             },
-            ReadFilter::Name(name) => {
+            ReadFilter::Name(ref name) => {
                 stmt = try!(
                     self.connection.prepare("SELECT * FROM users WHERE name=$1")
                 );
-                try!(stmt.query(&[&escape(&name)]))
+                try!(stmt.query(&[&escape(name)]))
             },
-            ReadFilter::Email(email) => {
+            ReadFilter::Email(ref email) => {
                 stmt = try!(
                     self.connection.prepare("SELECT * FROM users WHERE email=$1")
                 );
-                try!(stmt.query(&[&escape(&email)]))
+                try!(stmt.query(&[&escape(email)]))
             },
-            ReadFilter::Credentials(user, password) => {
-                let mut md5 = Md5::new();
-                md5.input_str(&escape(&password));
-                let password = md5.result_str();
+            ReadFilter::Credentials(ref user, _) => {
                 stmt = try!(
                     self.connection.prepare(
-                        "SELECT * FROM users WHERE (name=$1 OR email=$2) AND (password=$3)"
+                        "SELECT * FROM users WHERE (name=$1 OR email=$2)"
                     )
                 );
-                try!(stmt.query(&[&escape(&user), &escape(&user), &password]))
+                try!(stmt.query(&[&escape(user), &escape(user)]))
             },
             ReadFilter::IsAdmin(is_admin) => {
                 stmt = try!(
@@ -386,17 +385,27 @@ impl UsersDb {
                 try!(stmt.query(&[&is_admin]))
             }
         };
+
         let mut users = Vec::new();
         for result_row in rows {
             let row = try!(result_row);
-            users.push(User {
+            let user = User {
                 id: row.get(0),
                 name: row.get(1),
                 email: row.get(2),
                 password: row.get(3),
                 secret: row.get(4),
                 is_admin: row.get(5)
-            });
+            };
+
+            match filter {
+                ReadFilter::Credentials(_, ref password) => {
+                    if bcrypt::verify(password, &user.password) {
+                        users.push(user);
+                    }
+                },
+                _ => users.push(user),
+            };
         }
         Ok(users)
     }
@@ -416,8 +425,7 @@ impl UsersDb {
 #[cfg(test)]
 describe! user_builder_tests {
     it "should build a user correctly" {
-        use crypto::digest::Digest;
-        use crypto::md5::Md5;
+        use pwhash::bcrypt;
 
         let user = UserBuilder::new()
             .id(1)
@@ -431,15 +439,12 @@ describe! user_builder_tests {
         assert_eq!(user.id, Some(1));
         assert_eq!(user.name, "Mr Fox");
         assert_eq!(user.email, "fox@mozilla.org");
-        let mut md5 = Md5::new();
-        md5.input_str("pass12345678");
-        assert_eq!(user.password, md5.result_str());
+        assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
         assert_eq!(user.secret, "secret");
     }
 
     it "should provide a secret event if not explicitly set" {
-        use crypto::digest::Digest;
-        use crypto::md5::Md5;
+        use pwhash::bcrypt;
 
         let user = UserBuilder::new()
             .id(1)
@@ -452,9 +457,7 @@ describe! user_builder_tests {
         assert_eq!(user.id, Some(1));
         assert_eq!(user.name, "Mr Fox");
         assert_eq!(user.email, "fox@mozilla.org");
-        let mut md5 = Md5::new();
-        md5.input_str("pass12345678");
-        assert_eq!(user.password, md5.result_str());
+        assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
         assert!(!user.secret.is_empty());
     }
 

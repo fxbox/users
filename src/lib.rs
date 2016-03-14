@@ -15,6 +15,7 @@ extern crate crypto;
 extern crate iron;
 extern crate jwt;
 extern crate libc;
+extern crate pwhash;
 extern crate rand;
 extern crate router;
 extern crate rustc_serialize;
