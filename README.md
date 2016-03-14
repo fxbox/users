@@ -48,11 +48,11 @@ $ multirust override nightly-2016-03-07
 extern crate foxbox_users;
 extern crate iron;
 
-use foxbox_users::Manager;
+use foxbox_users::UsersManager;
 use iron::prelude::*;
 
 fn main() {
-    let manager = Manager::new("sqlite_db.sqlite");
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let router = manager.get_router_chain();
     Iron::new(router).http("localhost:3000").unwrap();
 }
@@ -76,7 +76,7 @@ fn dummy_handler(_: &mut Request) -> IronResult<Response> {
 }
 
 fn main() {
-    let manager = Manager::new("sqlite_db.sqlite");
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let mut router =  Router::new();
     router.get("/authenticated", dummy_handler);
     router.get("/not_authenticated", dummy_handler);
@@ -98,7 +98,7 @@ extern crate foxbox_users;
 use foxbox_users::{ReadFilter, UserBuilder};
 
 fn main() {
-    let manager = Manager::new("sqlite_db.sqlite");
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let db = manager.get_db();
     let user = UserBuilder::new()
         .name("MrFox")

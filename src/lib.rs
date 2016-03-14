@@ -35,16 +35,16 @@ pub use users_router::UsersRouter as UsersRouter;
 pub use auth_middleware::AuthMiddleware as AuthMiddleware;
 pub use auth_middleware::AuthEndpoint as AuthEndpoint;
 
-pub struct Manager {
+pub struct UsersManager {
     db_file_path: String,
 }
 
-impl Manager {
+impl UsersManager {
 
-    /// Create the Manager. The database with be stored at
+    /// Create the UsersManager. The database will be stored at
     /// `db_file_path`.
     pub fn new(db_file_path: &str) -> Self {
-        Manager { db_file_path: String::from(db_file_path) }
+        UsersManager { db_file_path: String::from(db_file_path) }
     }
 
     /// Get a new database connection.
