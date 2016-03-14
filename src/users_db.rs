@@ -15,7 +15,7 @@
 //! methods this way:
 //!
 //! ```
-//! use foxbox_users::users_db::UserBuilder;
+//! use foxbox_users::UserBuilder;
 //!
 //! let new_user =
 //!     UserBuilder::new()
@@ -52,7 +52,7 @@ pub struct User {
 /// Starting with `UserBuilder::new()` and chaining methods you can create users:
 ///
 /// ```
-/// # use foxbox_users::users_db::UserBuilder;
+/// # use foxbox_users::UserBuilder;
 /// let new_user =
 ///     UserBuilder::new()
 ///     .name(String::from("Miles"))                  // mandatory, not empty
@@ -68,7 +68,7 @@ pub struct User {
 /// can inspect `UserWithError#error` field to see what failed during initialization:
 ///
 /// ```
-/// # use foxbox_users::users_db::{UserBuilder, UserBuilderError};
+/// # use foxbox_users::{UserBuilder, UserBuilderError};
 /// let failing_user = UserBuilder::new()
 ///                    .name(String::from("Miles"))
 ///                    .password(String::from("short"))
@@ -82,7 +82,7 @@ pub struct User {
 /// although it will be automatically initialized to random if not provided.
 ///
 /// ```
-/// # use foxbox_users::users_db::UserBuilder;
+/// # use foxbox_users::UserBuilder;
 /// let new_user =
 ///     UserBuilder::new()
 ///     .name(String::from("Miles"))                  // mandatory, not empty
@@ -250,18 +250,14 @@ pub fn get_db_environment() -> String {
             tid.replace("/", "42"))
 }
 
-#[cfg(not(test))]
-fn get_db_environment() -> String {
-    "./users_db.sqlite".to_owned()
-}
-
 impl UsersDb {
     /// Opens the database and create it if not available yet.
+    /// path: the file path to the database.
     ///
     /// When the database instance exits the scope where it was created, it is
     /// automatically closed.
-    pub fn new() -> UsersDb {
-        let connection = Connection::open(get_db_environment()).unwrap();
+    pub fn new(path: &str) -> UsersDb {
+        let connection = Connection::open(path).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL UNIQUE,
@@ -281,8 +277,9 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::users_db::{UserBuilder, UsersDb, ReadFilter};
-    /// let db = UsersDb::new();
+    /// # use foxbox_users::{UsersManager, UserBuilder, ReadFilter};
+    /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
+    /// let db = manager.get_db();
     /// # db.create(&UserBuilder::new().name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
     /// let users = db.read(ReadFilter::All).unwrap();
@@ -301,9 +298,10 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter, UserBuilder};
+    /// # use foxbox_users::{UsersManager, UserBuilder};
     /// let admin = UserBuilder::new().name(String::from("admin")).set_admin(true).finalize().unwrap();
-    /// let db = UsersDb::new();
+    /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
+    /// let db = manager.get_db();
     /// assert!(db.create(&admin).is_ok());
     /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
@@ -329,15 +327,19 @@ impl UsersDb {
     /// For instance, to get all users:
     ///
     /// ```no_run
-    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
-    /// let all_users: Vec<User> = UsersDb::new().read(ReadFilter::All).unwrap();
+    /// # use foxbox_users::{UsersManager, User, ReadFilter};
+    /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
+    /// let db = manager.get_db();
+    /// let all_users: Vec<User> = db.read(ReadFilter::All).unwrap();
     /// ```
     ///
     /// And to quickly find administrators:
     ///
     /// ```no_run
-    /// # use foxbox_users::users_db::{User, UsersDb, ReadFilter};
-    /// let admins: Vec<User> = UsersDb::new().read(ReadFilter::IsAdmin(true)).unwrap();
+    /// # use foxbox_users::{UsersManager, User, ReadFilter};
+    /// let manager = UsersManager::new("UsersDb_read_1.sqlite");
+    /// let db = manager.get_db();
+    /// let admins: Vec<User> = db.read(ReadFilter::IsAdmin(true)).unwrap();
     /// ```
     pub fn read(&self, filter: ReadFilter) -> rusqlite::Result<Vec<User>> {
         let mut stmt = try!(
@@ -479,7 +481,7 @@ pub fn remove_test_db() {
 #[cfg(test)]
 describe! user_db_tests {
     before_each {
-        let usersDb = UsersDb::new();
+        let usersDb = UsersDb::new(&get_db_environment());
         usersDb.clear().ok();
 
         let defaultUsers = vec![

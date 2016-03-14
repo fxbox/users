@@ -48,11 +48,12 @@ $ multirust override nightly-2016-03-07
 extern crate foxbox_users;
 extern crate iron;
 
-use foxbox_users::users_router::UsersRouter;
+use foxbox_users::UsersManager;
 use iron::prelude::*;
 
 fn main() {
-    let router = UsersRouter::init();
+    let manager = UsersManager::new("sqlite_db.sqlite");
+    let router = manager.get_router_chain();
     Iron::new(router).http("localhost:3000").unwrap();
 }
 ```
@@ -64,7 +65,7 @@ extern crate foxbox_users;
 extern crate iron;
 extern crate router;
 
-use foxbox_users::auth_middleware::{AuthEndpoint, AuthMiddleware};
+use foxbox_users::AuthEndpoint;
 use iron::method::Method;
 use iron::prelude::*;
 use iron::status;
@@ -75,16 +76,15 @@ fn dummy_handler(_: &mut Request) -> IronResult<Response> {
 }
 
 fn main() {
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let mut router =  Router::new();
     router.get("/authenticated", dummy_handler);
     router.get("/not_authenticated", dummy_handler);
 
     let mut chain = Chain::new(router);
-    chain.around(AuthMiddleware{
-        auth_endpoints: vec![
+    chain.around(manager.get_middleware(vec![
             AuthEndpoint(Method::Get, vec!["authenticated".to_string()])
-        ]
-    });
+        ]);
 
     Iron::new(chain).http("localhost:3000").unwrap();
 }
@@ -95,10 +95,11 @@ fn main() {
 ```rust
 extern crate foxbox_users;
 
-use foxbox_users::users_db::{ReadFilter, UserBuilder, UsersDb};
+use foxbox_users::{ReadFilter, UserBuilder};
 
 fn main() {
-    let db = UsersDb::new();
+    let manager = UsersManager::new("sqlite_db.sqlite");
+    let db = manager.get_db();
     let user = UserBuilder::new()
         .name("MrFox")
         .email("fox@foxlink.org")
