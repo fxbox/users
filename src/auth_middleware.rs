@@ -21,6 +21,7 @@ use iron::{AroundMiddleware, Handler, headers, status};
 use iron::method::Method;
 use iron::prelude::*;
 use jwt::{self, Error, Header, Token};
+use urlencoded::UrlEncodedQuery;
 
 /// Structure representing [JWT claims section](https://jwt.io/introduction/).
 ///
@@ -122,16 +123,35 @@ impl<H: Handler> Handler for AuthHandler<H> {
                 return self.handler.handle(req);
             }
         }
-        // Otherwise, we need to verify the authorization header.
-        match req.headers.get::<headers::Authorization<headers::Bearer>>() {
+
+        // Otherwise, we need to verify the authorization token that can
+        // come within the Authorization header or as a query parameter.
+        match req.headers.clone().get::<headers::Authorization<headers::Bearer>>() {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
                 if let Err(_) = AuthMiddleware::verify(token,
                                                        &self.auth_db_file) {
                     return EndpointError::with(status::Unauthorized, 401)
                 }
             },
-            _ => return EndpointError::with(status::Unauthorized, 401)
+            _ => {
+                match req.get_ref::<UrlEncodedQuery>() {
+                    Ok(ref params) => {
+                        match params.get("auth") {
+                            Some(token) => {
+                                if let Err(_) = AuthMiddleware::verify(&token[0]) {
+                                    return EndpointError::with(status::Unauthorized, 401)
+                                }
+                            },
+                            _ => {
+                                return EndpointError::with(status::Unauthorized, 401)
+                            }
+                        }
+                    },
+                    _ => return EndpointError::with(status::Unauthorized, 401)
+                }
+            }
         };
+
         self.handler.handle(req)
     }
 }
@@ -302,6 +322,8 @@ describe! auth_middleware_tests {
             user.secret.to_owned().as_bytes(),
             Sha256::new()
         ).ok().unwrap();
+
+        // With Authorization header.
         let mut headers = Headers::new();
         headers.set(Authorization(Bearer { token: signed.to_owned() }));
         match request::get("http://localhost:3000/authenticated",
@@ -325,6 +347,38 @@ describe! auth_middleware_tests {
             },
             Err(_) => assert!(false)
         }
+
+        // With ?auth=<token>
+        match request::get(
+            &format!("http://localhost:3000/authenticated?auth={}", signed),
+            Headers::new(), &chain
+        ) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        };
+
+        match request::get(
+            &format!("http://localhost:3000/authenticated/afoo/bar/abaz?auth={}", signed),
+            Headers::new(), &chain
+        ) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        };
+
+        match request::delete(
+            &format!("http://localhost:3000/authenticated?auth={}", signed),
+            Headers::new(), &chain
+        ) {
+            Ok(res) => {
+                assert_eq!(res.status.unwrap(), Status::NotImplemented)
+            },
+            Err(_) => assert!(false)
+        }
+
         remove_test_db();
     }
 }

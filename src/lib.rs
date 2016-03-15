@@ -13,13 +13,14 @@ extern crate iron_test;
 
 extern crate crypto;
 extern crate iron;
+extern crate jwt;
 extern crate libc;
+extern crate rand;
 extern crate router;
 extern crate rustc_serialize;
 extern crate rusqlite;
 extern crate unicase;
-extern crate jwt;
-extern crate rand;
+extern crate urlencoded;
 
 mod users_db;
 mod users_router;

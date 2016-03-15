@@ -5,14 +5,15 @@ authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Pu
 
 [dependencies]
 iron = "*"
+jwt = "0.4.0"
 libc = "*"
+rand = "0.3.14"
 router = "*"
 rustc-serialize = "*"
 rusqlite = "*"
 rust-crypto = "*"
 unicase = "*"
-jwt = "0.4.0"
-rand = "0.3.14"
+urlencoded = "0.2.1"
 
 [dev-dependencies]
 iron-test = "*"
