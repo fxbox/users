@@ -138,7 +138,8 @@ impl<H: Handler> Handler for AuthHandler<H> {
                     Ok(ref params) => {
                         match params.get("auth") {
                             Some(token) => {
-                                if let Err(_) = AuthMiddleware::verify(&token[0]) {
+                                if let Err(_) = AuthMiddleware::verify(&token[0],
+                                                                       &self.auth_db_file) {
                                     return EndpointError::with(status::Unauthorized, 401)
                                 }
                             },
