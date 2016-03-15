@@ -17,7 +17,7 @@ use super::users_db::{ReadFilter, User, UsersDb};
 use super::errors::*;
 
 use crypto::sha2::Sha256;
-use iron::{AroundMiddleware, Handler, headers, status};
+use iron::{AroundMiddleware, Handler, headers, status, typemap};
 use iron::method::Method;
 use iron::prelude::*;
 use jwt::{self, Error, Header, Token};
@@ -65,6 +65,8 @@ impl SessionToken {
 /// would match with a GET or POST request to /a/path/whatever/bar/whatever
 #[derive(Debug)]
 pub struct AuthEndpoint(pub Vec<Method>, pub String);
+
+impl typemap::Key for User { type Value = User; }
 
 impl PartialEq for AuthEndpoint {
     fn eq(&self, other: &AuthEndpoint) -> bool {
@@ -126,11 +128,12 @@ impl<H: Handler> Handler for AuthHandler<H> {
 
         // Otherwise, we need to verify the authorization token that can
         // come within the Authorization header or as a query parameter.
+        let user;
         match req.headers.clone().get::<headers::Authorization<headers::Bearer>>() {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                if let Err(_) = AuthMiddleware::verify(token,
-                                                       &self.auth_db_file) {
-                    return EndpointError::with(status::Unauthorized, 401)
+                match AuthMiddleware::verify(token, &self.auth_db_file) {
+                    Ok(u) => user = u,
+                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
                 }
             },
             _ => {
@@ -138,9 +141,9 @@ impl<H: Handler> Handler for AuthHandler<H> {
                     Ok(ref params) => {
                         match params.get("auth") {
                             Some(token) => {
-                                if let Err(_) = AuthMiddleware::verify(&token[0],
-                                                                       &self.auth_db_file) {
-                                    return EndpointError::with(status::Unauthorized, 401)
+                                match AuthMiddleware::verify(&token[0], &self.auth_db_file) {
+                                    Ok(u) => user = u,
+                                    Err(_) => return EndpointError::with(status::Unauthorized, 401)
                                 }
                             },
                             _ => {
@@ -153,6 +156,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
             }
         };
 
+        req.extensions.insert::<User>(user);
         self.handler.handle(req)
     }
 }
@@ -198,7 +202,7 @@ impl AroundMiddleware for AuthMiddleware {
 }
 
 impl AuthMiddleware {
-    pub fn verify(token: &str, auth_db_file: &str) -> Result<(), ()> {
+    pub fn verify(token: &str, auth_db_file: &str) -> Result<User, ()> {
         if token.is_empty() {
             return Err(());
         }
@@ -212,7 +216,7 @@ impl AuthMiddleware {
         // user id contained in the token claim.
         let db = UsersDb::new(auth_db_file);
         match db.read(ReadFilter::Id(token.claims.id)) {
-            Ok(users) => {
+            Ok(mut users) => {
                 if users.len() != 1 {
                     return Err(());
                 }
@@ -220,13 +224,12 @@ impl AuthMiddleware {
                                  Sha256::new()) {
                     return Err(());
                 }
+                return Ok(users.pop().unwrap());
             },
             Err(_) => {
                 return Err(());
             }
         };
-
-        Ok(())
     }
 }
 
