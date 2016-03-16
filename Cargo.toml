@@ -7,6 +7,7 @@ authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Pu
 iron = "*"
 jwt = "0.4.0"
 libc = "*"
+pwhash = "0.1.1"
 rand = "0.3.14"
 router = "*"
 rustc-serialize = "*"
