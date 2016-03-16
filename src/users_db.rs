@@ -453,9 +453,9 @@ impl UsersDb {
     /// Replaces pre-existent user push resources, identified by its database id.
     pub fn update_push_resources(&self, id: i32, resources: &Vec<String>) -> rusqlite::Result<c_int> {
         try!(self.connection.execute("DELETE FROM push_resources WHERE user_id=$1", &[&id]));
-        let mut stmt = try!(self.connection.prepare("INSERT INTO push_resources (id, resource) VALUES ($1, $2)"));
+        let mut stmt = try!(self.connection.prepare("INSERT INTO push_resources (user_id, resource) VALUES ($1, $2)"));
         for resource in resources.iter() {
-            try!(stmt.query(&[&id, &escape(&resource)]));
+            try!(stmt.execute(&[&id, &escape(&resource)]));
         }
         Ok(0)
     }
