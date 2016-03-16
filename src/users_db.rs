@@ -44,7 +44,9 @@ pub struct User {
     pub email: String,
     pub password: String,
     pub secret: String,
-    pub is_admin: Option<bool>
+    pub is_admin: Option<bool>,
+    pub push_uri: Option<String>,
+    pub push_key: Option<String>
 }
 
 /// Creates instances of `User`.
@@ -102,7 +104,9 @@ pub struct UserBuilder {
     password: String,
     secret: String,
     error: Option<UserBuilderError>,
-    is_admin: Option<bool>
+    is_admin: Option<bool>,
+    push_uri: Option<String>,
+    push_key: Option<String>
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,7 +140,9 @@ impl UserBuilder {
             password: String::new(),
             secret: String::new(),
             error: None,
-            is_admin: Some(false)
+            is_admin: Some(false),
+            push_uri: None,
+            push_key: None
         }
     }
 
@@ -193,6 +199,16 @@ impl UserBuilder {
         self
     }
 
+    pub fn set_push_uri(mut self, push_uri: String) -> Self {
+        self.push_uri = Some(push_uri);
+        self
+    }
+
+    pub fn set_push_key(mut self, push_key: String) -> Self {
+        self.push_key = Some(push_key);
+        self
+    }
+
     pub fn finalize(mut self) -> Result<User, UserWithError> {
         use rand;
         if self.secret.is_empty() {
@@ -206,7 +222,9 @@ impl UserBuilder {
                     email: self.email,
                     password: self.password,
                     secret: self.secret,
-                    is_admin: self.is_admin
+                    is_admin: self.is_admin,
+                    push_uri: self.push_uri,
+                    push_key: self.push_key
                 },
                 error: error
             }),
@@ -216,7 +234,9 @@ impl UserBuilder {
                 email: self.email,
                 password: self.password,
                 secret: self.secret,
-                is_admin: self.is_admin
+                is_admin: self.is_admin,
+                push_uri: self.push_uri,
+                push_key: self.push_key
             })
         }
     }
@@ -228,7 +248,8 @@ pub enum ReadFilter {
     Name(String),
     Email(String),
     Credentials(String, String),
-    IsAdmin(bool)
+    IsAdmin(bool),
+    PushResource(String)
 }
 
 /// Provides [CRUD](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete)
@@ -264,7 +285,14 @@ impl UsersDb {
                 email       TEXT NOT NULL UNIQUE,
                 password    TEXT NOT NULL,
                 secret      TEXT NOT NULL,
-                is_admin    BOOL NOT NULL DEFAULT 0
+                is_admin    BOOL NOT NULL DEFAULT 0,
+                push_uri    TEXT,
+                push_key    TEXT
+            )", &[]).unwrap();
+
+        connection.execute("CREATE TABLE IF NOT EXISTS push_resources (
+                user_id     INTEGER,
+                resource    TEXT NOT NULL
             )", &[]).unwrap();
 
         UsersDb {
@@ -287,7 +315,9 @@ impl UsersDb {
     /// ```
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.connection.execute_batch(
-            "DELETE FROM users;
+            "DELETE FROM push_resources;
+             DELETE FROM SQLITE_SEQUENCE WHERE name='push_resources';
+             DELETE FROM users;
              DELETE FROM SQLITE_SEQUENCE WHERE name='users';
              VACUUM;"
         )
@@ -306,8 +336,8 @@ impl UsersDb {
     /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
         match self.connection.execute("INSERT INTO users
-            (name, email, password, secret, is_admin) VALUES ($1, $2, $3, $4, $5)",
-            &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin]
+            (name, email, password, secret, is_admin, push_uri, push_key) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin, &user.push_key, &user.push_uri]
         ) {
             Ok(_) => {
                match self.read(ReadFilter::Name(user.name.to_owned())) {
@@ -384,7 +414,16 @@ impl UsersDb {
                     self.connection.prepare("SELECT * FROM users where is_admin=$1")
                 );
                 try!(stmt.query(&[&is_admin]))
-            }
+            },
+            ReadFilter::PushResource(resource) => {
+                stmt = try!(
+                    self.connection.prepare(
+                        "SELECT * FROM users WHERE push_uri IS NOT NULL AND push_key IS NOT NULL
+                         AND ID IN (SELECT user_id FROM push_resources WHERE resource=$1)"
+                    )
+                );
+                try!(stmt.query(&[&escape(&resource)]))
+            },
         };
         let mut users = Vec::new();
         for result_row in rows {
@@ -395,7 +434,9 @@ impl UsersDb {
                 email: row.get(2),
                 password: row.get(3),
                 secret: row.get(4),
-                is_admin: row.get(5)
+                is_admin: row.get(5),
+                push_uri: row.get(6),
+                push_key: row.get(7)
             });
         }
         Ok(users)
@@ -403,8 +444,20 @@ impl UsersDb {
 
     /// Replaces a pre-existent user, identified by its database id.
     pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
-        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5
-            WHERE id=$6", &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin, &id])
+        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5,
+                                 push_uri=$6, push_key=$7 WHERE id=$8",
+                                 &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin,
+                                 &user.push_uri, &user.push_key, &id])
+    }
+
+    /// Replaces pre-existent user push resources, identified by its database id.
+    pub fn update_push_resources(&self, id: i32, resources: &Vec<String>) -> rusqlite::Result<c_int> {
+        try!(self.connection.execute("DELETE FROM push_resources WHERE user_id=$1", &[&id]));
+        let mut stmt = try!(self.connection.prepare("INSERT INTO push_resources (user_id, resource) VALUES ($1, $2)"));
+        for resource in resources.iter() {
+            try!(stmt.execute(&[&id, &escape(&resource)]));
+        }
+        Ok(0)
     }
 
     /// Removes a user identified by its id.

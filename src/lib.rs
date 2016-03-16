@@ -64,7 +64,7 @@ impl UsersManager {
                          auth_db_file: self.db_file_path.to_owned() }
     }
 
-    pub fn verify_token(&self, token: &str) -> Result<(), ()> {
+    pub fn verify_token(&self, token: &str) -> Result<User, ()> {
         AuthMiddleware::verify(token, &self.db_file_path)
     }
 }
