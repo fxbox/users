@@ -13,6 +13,7 @@ extern crate iron_test;
 
 extern crate crypto;
 extern crate iron;
+extern crate iron_cors;
 extern crate jwt;
 extern crate libc;
 extern crate pwhash;

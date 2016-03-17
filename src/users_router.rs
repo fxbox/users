@@ -15,96 +15,15 @@ use super::auth_middleware::SessionToken;
 use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 use super::errors::*;
 
-use iron::{ AfterMiddleware, headers, status };
-use iron::headers::{Authorization, Basic};
+use iron::status;
+use iron::headers::{ Authorization, Basic };
 use iron::method::Method;
-use iron::method::Method::*;
 use iron::prelude::*;
+use iron_cors::CORS;
 use router::Router;
 use rustc_serialize::json;
-use unicase::UniCase;
 
 use std::io::Read;
-
-type Endpoint = (&'static[Method], &'static str);
-
-struct CORS;
-
-impl CORS {
-    // Only endpoints listed here will allow CORS.
-    // Endpoints containing a variable path part can use ':foo' like in:
-    // "/foo/:bar" for a URL like https://domain.com/foo/123 where 123 is
-    // variable.
-    pub const ENDPOINTS: &'static[Endpoint] = &[
-        (&[Method::Post], "login")
-    ];
-
-    pub fn is_allowed(req: &mut Request) -> bool {
-        let mut is_cors_endpoint = false;
-        for endpoint in CORS::ENDPOINTS {
-            let (ref methods, path) = *endpoint;
-
-            if !methods.contains(&req.method) &&
-               req.method != Method::Options {
-                continue;
-            }
-
-            let path: Vec<&str> = if path.starts_with('/') {
-                path[1..].split('/').collect()
-            } else {
-                path[0..].split('/').collect()
-            };
-
-            if path.len() != req.url.path.len() {
-                continue;
-            }
-
-            for (i, req_path) in req.url.path.iter().enumerate() {
-                is_cors_endpoint = false;
-                if req_path != path[i] && !path[i].starts_with(':') {
-                    break;
-                }
-                is_cors_endpoint = true;
-            }
-            if is_cors_endpoint {
-                break;
-            }
-        }
-        is_cors_endpoint
-    }
-
-    pub fn add_headers(res: &mut Response) {
-        res.headers.set(headers::AccessControlAllowOrigin::Any);
-        res.headers.set(headers::AccessControlAllowHeaders(
-            vec![
-                UniCase(String::from("accept")),
-                UniCase(String::from("authorization")),
-                UniCase(String::from("content-type"))
-            ]
-        ));
-        res.headers.set(headers::AccessControlAllowMethods(
-            vec![Get, Post, Put]
-        ));
-    }
-}
-
-impl AfterMiddleware for CORS {
-    fn after(&self, req: &mut Request, mut res: Response)
-        -> IronResult<Response> {
-        if CORS::is_allowed(req) {
-            CORS::add_headers(&mut res);
-        }
-        Ok(res)
-    }
-
-    fn catch(&self, req: &mut Request, mut err: IronError)
-        -> IronResult<Response> {
-        if CORS::is_allowed(req) {
-            CORS::add_headers(&mut err.response);
-        }
-        Err(err)
-    }
-}
 
 type Credentials = (String, String);
 
@@ -273,8 +192,13 @@ impl UsersRouter {
             UsersRouter::login(req, &data)
         });
 
+        let cors = CORS::new(vec![
+            (vec![Method::Get, Method::Post, Method::Put],
+             "login".to_owned())
+        ]);
+
         let mut chain = Chain::new(router);
-        chain.link_after(CORS);
+        chain.link_after(cors);
 
         chain
     }
@@ -283,7 +207,7 @@ impl UsersRouter {
 #[cfg(test)]
 describe! cors_tests {
     before_each {
-        use iron::{headers, Headers};
+        use iron::{ headers, Headers };
         use iron_test::request;
         use super::super::users_db::get_db_environment;
         use super::super::UsersManager;
@@ -293,10 +217,14 @@ describe! cors_tests {
     }
 
     it "should get the appropriate CORS headers" {
-        use super::CORS;
+        use iron::method::Method;
 
-        for endpoint in CORS::ENDPOINTS {
-            let (_, path) = *endpoint;
+        let endpoints = vec![
+            (vec![Method::Get, Method::Post, Method::Put],
+             "login".to_owned())
+        ];
+        for endpoint in endpoints {
+            let (_, path) = endpoint;
             let path = "http://localhost:3000/".to_owned() +
                        &(path.replace(":", "foo"));
             match request::options(&path, Headers::new(), &router) {

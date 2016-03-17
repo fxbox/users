@@ -5,6 +5,7 @@ authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Pu
 
 [dependencies]
 iron = "*"
+iron-cors = { git = "https://github.com/fxbox/iron-cors.git", rev = "137d42f" }
 jwt = "0.4.0"
 libc = "*"
 pwhash = "0.1.1"
