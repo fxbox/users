@@ -37,6 +37,7 @@ pub use users_db::User as User;
 pub use users_router::UsersRouter as UsersRouter;
 pub use auth_middleware::AuthMiddleware as AuthMiddleware;
 pub use auth_middleware::AuthEndpoint as AuthEndpoint;
+pub use auth_middleware::SessionToken as SessionToken;
 
 pub struct UsersManager {
     db_file_path: String,

@@ -37,7 +37,7 @@ pub struct SessionClaims{
 pub struct SessionToken;
 
 impl SessionToken {
-    pub fn for_user(user: &User) -> Result<String, Error> {
+    pub fn from_user(user: &User) -> Result<String, Error> {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
@@ -48,6 +48,11 @@ impl SessionToken {
             user.secret.to_owned().as_bytes(),
             Sha256::new()
         )
+    }
+
+    pub fn from_string(token_str: &str)
+        -> Result<Token<Header, SessionClaims>, Error> {
+        Token::<Header, SessionClaims>::parse(token_str)
     }
 }
 
@@ -199,11 +204,7 @@ impl AroundMiddleware for AuthMiddleware {
 
 impl AuthMiddleware {
     pub fn verify(token: &str, auth_db_file: &str) -> Result<(), ()> {
-        if token.is_empty() {
-            return Err(());
-        }
-
-        let token = match Token::<Header, SessionClaims>::parse(token) {
+        let token = match SessionToken::from_string(token) {
             Ok(token) => token,
             Err(_) => return Err(())
         };

@@ -34,7 +34,7 @@ struct LoginResponse {
 
 impl LoginResponse {
     fn with_user(user: &User) -> IronResult<Response> {
-        let session_token = match SessionToken::for_user(&user) {
+        let session_token = match SessionToken::from_user(&user) {
             Ok(token) => token,
             Err(_) => return EndpointError::with(
                 status::InternalServerError, 500
