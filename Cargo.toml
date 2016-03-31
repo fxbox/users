@@ -4,20 +4,20 @@ version = "0.1.0"
 authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Puente González <salva@unoyunodiez.com"]
 
 [dependencies]
-iron = "*"
-iron-cors = { git = "https://github.com/fxbox/iron-cors.git", rev = "137d42f" }
+iron = "0.3"
+iron-cors = { git = "https://github.com/fxbox/iron-cors.git", rev = "96ede73" }
 jwt = "0.4.0"
-libc = "*"
+libc = "0.2.7"
 pwhash = "0.1.1"
 rand = "0.3.14"
-router = "*"
-rustc-serialize = "*"
-rusqlite = "*"
-rust-crypto = "*"
-unicase = "*"
-urlencoded = "0.2.1"
+router = "0.1.1"
+rustc-serialize = "0.3.18"
+rusqlite = "0.6.0"
+rust-crypto = "0.2.34"
+unicase = "1.4.0"
+urlencoded = "0.3.0"
 
 [dev-dependencies]
-iron-test = "*"
+iron-test = "0.3.0"
 stainless = "0.1.4"
 clippy = "0.0.48"
