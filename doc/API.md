@@ -37,6 +37,12 @@ Use the JWT with this header:
 }
 ```
 
+For example:
+
+```curl
+curl 'http://localhost:3000/api/v1/services' -H 'Accept: application/json' -H 'Authorization: Bearer eyJ0eXAiOiJKV1QiLCJraWQiOm51bGwsImFsZyI6IkhTMjU2In0.eyJpZCI6MiwibmFtZSI6ImFkbWluIn0.JNtvokupDl2hdqB+vER15y89qigPc4FviZfJOSR1Vso
+```
+
 ## Response Format
 
 All successful requests will produce a response with HTTP status code of "20X" and content-type of "application/json".  The structure of the response body will depend on the endpoint in question.
