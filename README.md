@@ -147,7 +147,7 @@ $ cargo build
 ### Rust tests
 
 ```bash
-$ RUST_TEST_THREADS=1 cargo test
+$ cargo test
 ```
 
 ### Documentation
