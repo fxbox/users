@@ -21,6 +21,7 @@ use iron::{AroundMiddleware, Handler, headers, status};
 use iron::method::Method;
 use iron::prelude::*;
 use jwt::{self, Error, Header, Token};
+use std::sync::{ Arc, RwLock };
 use urlencoded::UrlEncodedQuery;
 
 /// Structure representing [JWT claims section](https://jwt.io/introduction/).
@@ -56,7 +57,7 @@ impl SessionToken {
     }
 }
 
-/// Represents an authorized endpoint.
+/// Represents an authenticated endpoint.
 ///
 /// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
 /// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
@@ -68,7 +69,7 @@ impl SessionToken {
 /// AuthEndpoint(vec![Method::Get, Method::Post], "/a/path/:foo/bar/:baz")
 ///
 /// would match with a GET or POST request to /a/path/whatever/bar/whatever
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuthEndpoint(pub Vec<Method>, pub String);
 
 impl PartialEq for AuthEndpoint {
@@ -114,7 +115,7 @@ impl PartialEq for AuthEndpoint {
 struct AuthHandler<H: Handler> {
     handler: H,
     auth_db_file: String,
-    auth_endpoints: Vec<AuthEndpoint>
+    auth_endpoints: Arc<RwLock<Vec<AuthEndpoint>>>
 }
 
 impl<H: Handler> Handler for AuthHandler<H> {
@@ -122,9 +123,12 @@ impl<H: Handler> Handler for AuthHandler<H> {
         {
             let endpoint = AuthEndpoint(vec![req.method.clone()],
                                         req.url.path.join("/"));
+
+            let guard = self.auth_endpoints.read().unwrap();
+
             // If this is not an authenticated endpoint, just proceed with the
             // original request.
-            if !self.auth_endpoints.contains(&endpoint) {
+            if !guard.contains(&endpoint) {
                 return self.handler.handle(req);
             }
         }
@@ -186,9 +190,12 @@ impl<H: Handler> Handler for AuthHandler<H> {
 /// # }
 /// }
 /// ```
+#[derive(Debug, Clone)]
 pub struct AuthMiddleware {
-    /// `Vec<AuthEndpoint>` containing the set of endpoints to be authenticated.
-    pub auth_endpoints: Vec<AuthEndpoint>,
+    /// `Arc<RwLock<Vec<AuthEndpoint>>>` containing the set of endpoints to
+    /// be authenticated. This vector can be dynamically modified even after
+    /// it has been given to an Iron chain.
+    pub auth_endpoints: Arc<RwLock<Vec<AuthEndpoint>>>,
     pub auth_db_file: String,
 }
 
@@ -196,13 +203,33 @@ impl AroundMiddleware for AuthMiddleware {
     fn around(self, handler: Box<Handler>) -> Box<Handler> {
         Box::new(AuthHandler {
             handler: handler,
-            auth_endpoints: self.auth_endpoints,
+            auth_endpoints: self.auth_endpoints.clone(),
             auth_db_file: self.auth_db_file.clone(),
         }) as Box<Handler>
     }
 }
 
 impl AuthMiddleware {
+    pub fn new(auth_endpoints: Vec<AuthEndpoint>, auth_db_file: String) -> AuthMiddleware {
+        AuthMiddleware{
+            auth_endpoints: Arc::new(RwLock::new(auth_endpoints)),
+            auth_db_file: auth_db_file
+        }
+    }
+
+    /// Allow the addition of authenticated endpoints.
+    pub fn add_auth_endpoints(&mut self, endpoints: Vec<AuthEndpoint>) {
+        let mut guard = self.auth_endpoints.write().unwrap();
+        for (_, endpoint) in endpoints.iter().enumerate() {
+            // If the endpoint is already stored as an authenticated endpoint
+            // we just bail out.
+            if guard.contains(endpoint) {
+                continue;
+            }
+            guard.push((*endpoint).clone());
+        }
+    }
+
     pub fn verify(token: &str, auth_db_file: &str) -> Result<(), ()> {
         let token = match SessionToken::from_string(token) {
             Ok(token) => token,
@@ -255,12 +282,17 @@ describe! auth_middleware_tests {
         router.get("/not_authenticated", not_implemented);
 
         let mut chain = Chain::new(router);
-        chain.around(manager.get_middleware(
+        let mut middleware = manager.get_middleware(
             vec![AuthEndpoint(vec![Method::Get, Method::Delete],
-                              "/authenticated".to_owned()),
-                 AuthEndpoint(vec![Method::Get],
-                              "/authenticated/:foo/bar/:baz".to_owned())]
-                ));
+                              "/authenticated".to_owned())]
+        );
+
+        chain.around(middleware.clone());
+
+        middleware.add_auth_endpoints(vec![
+             AuthEndpoint(vec![Method::Get],
+                          "/authenticated/:foo/bar/:baz".to_owned())
+        ]);
     }
 
     it "should allow request to not authenticated endpoint" {

@@ -65,11 +65,13 @@ extern crate foxbox_users;
 extern crate iron;
 extern crate router;
 
-use foxbox_users::AuthEndpoint;
+use foxbox_users::{ AuthEndpoint, UsersManager };
 use iron::method::Method;
 use iron::prelude::*;
 use iron::status;
 use router::Router;
+use std::thread;
+use std::time::Duration;
 
 fn dummy_handler(_: &mut Request) -> IronResult<Response> {
     Ok(Response::with(status::Ok))
@@ -79,12 +81,27 @@ fn main() {
     let manager = UsersManager::new("sqlite_db.sqlite");
     let mut router =  Router::new();
     router.get("/authenticated", dummy_handler);
+    router.get("/authenticated2", dummy_handler);
     router.get("/not_authenticated", dummy_handler);
 
     let mut chain = Chain::new(router);
-    chain.around(manager.get_middleware(vec![
-            AuthEndpoint(Method::Get, vec!["authenticated".to_string()])
+    let mut middleware = manager.get_middleware(
+        vec![AuthEndpoint(vec![Method::Get, Method::Delete],
+                          "/authenticated".to_owned())]
+    );
+
+    chain.link_around(middleware.clone());
+
+    thread::spawn(move || {
+        println!("Adding new auth endpoint");
+        thread::sleep(Duration::from_millis(3000));
+        // Add new authenticated endpoints after the middleware has been given
+        // to the Iron chain and the Iron server has started.
+        middleware.add_auth_endpoints(vec![
+             AuthEndpoint(vec![Method::Get],
+                          "/authenticated2".to_owned())
         ]);
+    });
 
     Iron::new(chain).http("localhost:3000").unwrap();
 }
