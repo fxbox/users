@@ -63,8 +63,7 @@ impl UsersManager {
 
     pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)
                           -> AuthMiddleware {
-        AuthMiddleware { auth_endpoints: auth_endpoints,
-                         auth_db_file: self.db_file_path.to_owned() }
+        AuthMiddleware::new(auth_endpoints, self.db_file_path.to_owned())
     }
 
     pub fn verify_token(&self, token: &str) -> Result<(), ()> {
