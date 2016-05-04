@@ -139,7 +139,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
             Some(&headers::Authorization(headers::Bearer { ref token })) => {
                 if let Err(_) = AuthMiddleware::verify(token,
                                                        &self.auth_db_file) {
-                    return EndpointError::with(status::Unauthorized, 401)
+                    return EndpointError::with(status::Unauthorized, 401, None)
                 }
             },
             _ => {
@@ -149,15 +149,15 @@ impl<H: Handler> Handler for AuthHandler<H> {
                             Some(token) => {
                                 if let Err(_) = AuthMiddleware::verify(&token[0],
                                                                        &self.auth_db_file) {
-                                    return EndpointError::with(status::Unauthorized, 401)
+                                    return EndpointError::with(status::Unauthorized, 401, None)
                                 }
                             },
                             _ => {
-                                return EndpointError::with(status::Unauthorized, 401)
+                                return EndpointError::with(status::Unauthorized, 401, None)
                             }
                         }
                     },
-                    _ => return EndpointError::with(status::Unauthorized, 401)
+                    _ => return EndpointError::with(status::Unauthorized, 401, None)
                 }
             }
         };

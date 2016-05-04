@@ -37,7 +37,7 @@ impl LoginResponse {
         let session_token = match SessionToken::from_user(&user) {
             Ok(token) => token,
             Err(_) => return EndpointError::with(
-                status::InternalServerError, 500
+                status::InternalServerError, 501, None
             )
         };
         let body_obj = LoginResponse{
@@ -46,7 +46,7 @@ impl LoginResponse {
         let body = match json::encode(&body_obj) {
             Ok(body) => body,
             Err(_) => return EndpointError::with(
-                status::InternalServerError, 500
+                status::InternalServerError, 501, None
             )
         };
         Ok(Response::with((status::Created, body)))
@@ -91,7 +91,8 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
-            return EndpointError::with(status::Gone, 410);
+            return EndpointError::with(status::Gone, 410,
+                Some("There is already an admin account".to_owned()));
         }
 
         let mut payload = String::new();
@@ -111,11 +112,9 @@ impl UsersRouter {
             .set_admin(true)
             .finalize() {
                 Ok(user) => user,
-                Err(error) => {
-                    println!("{:?}", error);
-                    return EndpointError::with(
-                        status::BadRequest, 400
-                    );
+                Err(user_with_error) => {
+                    println!("{:?}", user_with_error);
+                    return from_user_builder_error(user_with_error.error);
                 }
             };
 
@@ -131,7 +130,6 @@ impl UsersRouter {
     }
 
     fn login(req: &mut Request, db_path: &str) -> IronResult<Response> {
-
         // Return Some pair of valid credentials if both username and password
         // are provided or None elsewhere.
         fn credentials_from_header(auth: &Authorization<Basic>)
@@ -155,7 +153,8 @@ impl UsersRouter {
             }
         }
 
-        let error103 = EndpointError::with(status::BadRequest, 103);
+        let error103 = EndpointError::with(status::BadRequest, 103,
+            Some("Missing or malformed authentication header".to_owned()));
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
             if let Some((username, password)) = credentials_from_header(auth) {
@@ -164,11 +163,11 @@ impl UsersRouter {
                     ReadFilter::Credentials(username, password)) {
                     Ok(users) => users,
                     Err(_) => return EndpointError::with(
-                        status::InternalServerError, 500
+                        status::InternalServerError, 501, None
                     )
                 };
                 if users.len() != 1 {
-                    return EndpointError::with(status::Unauthorized, 401);
+                    return EndpointError::with(status::Unauthorized, 401, None);
                 }
                 LoginResponse::with_user(&users[0])
             } else {
@@ -375,6 +374,7 @@ describe! setup_tests {
                 assert_eq!(response.status.unwrap(), Status::Gone);
                 let json = extract_body_to::<ErrorBody>(response).unwrap();
                 assert_eq!(json.errno, 410);
+                assert_eq!(json.message, Some("There is already an admin account".to_owned()));
             }
         };
     }
@@ -403,6 +403,7 @@ describe! setup_tests {
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
                 let json = extract_body_to::<ErrorBody>(response).unwrap();
                 assert_eq!(json.errno, 100);
+                assert_eq!(json.message, Some("Invalid user name".to_owned()));
             }
         };
     }
@@ -431,6 +432,7 @@ describe! setup_tests {
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
                 let json = extract_body_to::<ErrorBody>(response).unwrap();
                 assert_eq!(json.errno, 101);
+                assert_eq!(json.message, Some("Invalid email".to_owned()));
             }
         };
     }
@@ -459,6 +461,8 @@ describe! setup_tests {
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
                 let json = extract_body_to::<ErrorBody>(response).unwrap();
                 assert_eq!(json.errno, 102);
+                assert_eq!(json.message,
+                    Some("Invalid password. Passwords must have a minimum of 8 chars".to_owned()));
             }
         };
     }

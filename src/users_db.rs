@@ -74,7 +74,7 @@ pub struct User {
 ///                    .finalize()
 ///                    .unwrap_err();
 ///
-/// assert_eq!(failing_user.error, UserBuilderError::InvalidPassword);
+/// assert_eq!(failing_user.error, UserBuilderError::Password);
 /// ```
 ///
 /// All users have a `secret` field that can be set with `UserBuilder#secret()`
@@ -106,11 +106,10 @@ pub struct UserBuilder {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UserBuilderError {
-    EmptyEmail,
-    EmptyUsername,
-    EmptySecret,
-    InvalidEmail,
-    InvalidPassword
+    Username,
+    Secret,
+    Email,
+    Password
 }
 
 #[derive(Debug)]
@@ -146,7 +145,7 @@ impl UserBuilder {
 
     pub fn name(mut self, name: String) -> Self {
         if name.is_empty() {
-            self.error = Some(UserBuilderError::EmptyUsername);
+            self.error = Some(UserBuilderError::Username);
             return self;
         }
         self.name = escape(&name);
@@ -155,12 +154,12 @@ impl UserBuilder {
 
     pub fn email(mut self, email: String) -> Self {
         if email.is_empty() {
-            self.error = Some(UserBuilderError::EmptyEmail);
+            self.error = Some(UserBuilderError::Email);
             return self;
         }
         let parts: Vec<&str> = email.rsplitn(2, '@').collect();
         if parts[0].is_empty() || parts[1].is_empty() {
-            self.error = Some(UserBuilderError::InvalidEmail);
+            self.error = Some(UserBuilderError::Email);
             return self;
         }
         self.email = escape(&email);
@@ -169,21 +168,21 @@ impl UserBuilder {
 
     pub fn password(mut self, password: String) -> Self {
         if password.is_empty() || password.len() < UserBuilder::MIN_PASS_LEN {
-            self.error = Some(UserBuilderError::InvalidPassword);
+            self.error = Some(UserBuilderError::Password);
             return self;
         }
         match bcrypt::hash(&password) {
             Ok(hash) =>
                 self.password = hash,
             Err(_) =>
-                self.error = Some(UserBuilderError::InvalidPassword),
+                self.error = Some(UserBuilderError::Password),
         }
         self
     }
 
     pub fn secret(mut self, secret: String) -> Self {
         if secret.is_empty()  {
-            self.error = Some(UserBuilderError::EmptySecret);
+            self.error = Some(UserBuilderError::Secret);
             return self;
         }
         self.secret = secret.to_owned();
