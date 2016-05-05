@@ -11,7 +11,7 @@
 //! [REST documentation](https://github.com/fxbox/users/blob/master/doc/API.md)
 //! can be found in the GitHub repository.
 
-use super::auth_middleware::SessionToken;
+use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
 use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 use super::errors::*;
 
@@ -26,6 +26,8 @@ use rustc_serialize::json;
 use std::io::Read;
 
 type Credentials = (String, String);
+
+pub static API_VERSION: &'static str = "v1";
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct LoginResponse {
@@ -178,26 +180,100 @@ impl UsersRouter {
         }
     }
 
+    pub fn create_user(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
+    pub fn get_user(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
+    pub fn get_all_users(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
+    pub fn edit_user(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
+    pub fn delete_user(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
     /// Creates the Iron user router middleware.
     pub fn init(db_path: &str) -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
+        // Setup.
         let data = String::from(db_path);
-        router.post("/setup", move |req: &mut Request| -> IronResult<Response> {
+        router.post(format!("/{}/setup", API_VERSION),
+                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::setup(req, &data)
         });
+
+        // Login.
         let data = String::from(db_path);
-        router.post("/login", move |req: &mut Request| -> IronResult<Response> {
+        router.post(format!("/{}/login", API_VERSION),
+                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::login(req, &data)
         });
 
+        // User management.
+        let data = String::from(db_path);
+        router.post(format!("/{}/users", API_VERSION),
+                    move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::create_user(req, &data)
+        });
+
+        let data = String::from(db_path);
+        router.get(format!("/{}/users/:id", API_VERSION),
+                   move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::get_user(req, &data)
+        });
+
+        let data = String::from(db_path);
+        router.get(format!("/{}/users", API_VERSION),
+                   move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::get_all_users(req, &data)
+        });
+
+        let data = String::from(db_path);
+        router.put(format!("/{}/users/:id", API_VERSION),
+                   move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::edit_user(req, &data)
+        });
+
+        let data = String::from(db_path);
+        router.delete(format!("/{}/users/:id", API_VERSION),
+                      move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::delete_user(req, &data)
+        });
+
         let cors = CORS::new(vec![
-            (vec![Method::Get, Method::Post, Method::Put],
-             "login".to_owned())
+            (vec![Method::Post],
+             format!("/{}/login", API_VERSION)),
+            (vec![Method::Post, Method::Get],
+             format!("/{}/users", API_VERSION)),
+            (vec![Method::Get, Method::Put, Method::Delete],
+             format!("/{}/users/:id", API_VERSION))
         ]);
+
+        let data = String::from(db_path);
+        let auth_middleware = AuthMiddleware::new(vec![
+            AuthEndpoint(vec![Method::Post, Method::Get],
+                         format!("/{}/users", API_VERSION)),
+            AuthEndpoint(vec![Method::Put, Method::Delete],
+                         format!("/{}/users/:id", API_VERSION))
+        ], data);
 
         let mut chain = Chain::new(router);
         chain.link_after(cors);
+        chain.link_around(auth_middleware);
 
         chain
     }
@@ -210,6 +286,7 @@ describe! cors_tests {
         use iron_test::request;
         use super::super::users_db::get_db_environment;
         use super::super::UsersManager;
+        use super::API_VERSION;
 
         let manager = UsersManager::new(&get_db_environment());
         let router = manager.get_router_chain();
@@ -219,13 +296,12 @@ describe! cors_tests {
         use iron::method::Method;
 
         let endpoints = vec![
-            (vec![Method::Get, Method::Post, Method::Put],
-             "login".to_owned())
+            (vec![Method::Post], format!("{}/login", API_VERSION))
         ];
         for endpoint in endpoints {
             let (_, path) = endpoint;
-            let path = "http://localhost:3000/".to_owned() +
-                       &(path.replace(":", "foo"));
+            let path = format!("http://localhost:3000/{}",
+                               &(path.replace(":", "foo")));
             match request::options(&path, Headers::new(), &router) {
                 Ok(res) => {
                     let headers = &res.headers;
@@ -241,7 +317,7 @@ describe! cors_tests {
     }
 
     it "should get the appropriate CORS headers even in case of error" {
-        match request::post("http://localhost:3000/login",
+        match request::post(&format!("http://localhost:3000/{}/login", API_VERSION),
                             Headers::new(),
                             "{}",
                             &router) {
@@ -259,7 +335,8 @@ describe! cors_tests {
     }
 
     it "should not get CORS headers" {
-        match request::options("http://localhost:3000/setup", Headers::new(),
+        match request::options(&format!("http://localhost:3000/{}/setup", API_VERSION),
+                               Headers::new(),
                                &router) {
             Ok(res) => {
                 let headers = &res.headers;
@@ -288,7 +365,7 @@ describe! setup_tests {
         let usersDb = manager.get_db();
         usersDb.clear().ok();
 
-        let endpoint = "http://localhost:3000/setup";
+        let endpoint = &format!("http://localhost:3000/{}/setup", API_VERSION);
     }
 
     it "should respond 201 Created for a proper POST /setup" {
@@ -298,7 +375,7 @@ describe! setup_tests {
         use iron_test::response::extract_body_to_string;
         use jwt;
         use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
+        use rustc_serialize::json::{ self, DecodeResult };
 
         fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
             json::decode(&extract_body_to_string(response))
@@ -506,7 +583,7 @@ describe! login_tests {
                    .email(String::from("username@example.com"))
                    .secret(String::from("secret"))
                    .finalize().unwrap()).ok();
-        let endpoint = "http://localhost:3000/login";
+        let endpoint = &format!("http://localhost:3000/{}/login", API_VERSION);
     }
 
     it "should respond with a generic 400 Bad Request for requests missing username" {

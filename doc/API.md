@@ -14,12 +14,13 @@ In the future, the API will evolve to support multiple users.
 
 All requests will be to URLs of the form:
 
-    https://<host-url>/<api-endpoint>
+    https://<host-url>/v1/<api-endpoint>
 
 Note that:
 
 * All API access must be over a properly-validated HTTPS connection.
-* The API endpoints may be mounted on a path different than the host root. For instance, for [Project Linked](https://github.com/fxbox/foxbox) we are mounting this API at `/users`, so the URLs end up being `https://<host-url>/users/<api-endpoint>`
+* The URL embeds a version identifier "v1"; future revisions of this API may introduce new version numbers.
+* The API endpoints may be mounted on a path different than the host root. For instance, for [Project Link](https://github.com/fxbox/foxbox) we are mounting this API at `/users`, so the URLs end up being `https://<host-url>/users/v1/<api-endpoint>`.
 
 ## Request Format
 
@@ -81,11 +82,11 @@ The currently-defined error responses are:
 * Login
     * [POST /login](#post-login) :lock:
 * User management
-    * [POST /](#post-) :lock:
-    * [GET /](#get-) :lock:
-    * [GET /:id](#get-id)
-    * [PUT /:id](#put-id) :lock:
-    * [DELETE /:id](#delete-id) :lock:
+    * [POST /users](#post-) :lock:
+    * [GET /users](#get-) :lock:
+    * [GET /users/:id](#get-id)
+    * [PUT /users/:id](#put-id) :lock:
+    * [DELETE /users/:id](#delete-id) :lock:
 
 ## POST /setup
 Allow to initiate the box by registering an admin user. CORS is not allowed for this endpoint.

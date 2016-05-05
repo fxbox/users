@@ -43,7 +43,8 @@ pub struct User {
     pub email: String,
     pub password: String,
     pub secret: String,
-    pub is_admin: Option<bool>
+    pub is_admin: Option<bool>,
+    pub is_active: bool
 }
 
 /// Creates instances of `User`.
@@ -101,7 +102,8 @@ pub struct UserBuilder {
     password: String,
     secret: String,
     error: Option<UserBuilderError>,
-    is_admin: Option<bool>
+    is_admin: Option<bool>,
+    is_active: bool
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,7 +136,8 @@ impl UserBuilder {
             password: String::new(),
             secret: String::new(),
             error: None,
-            is_admin: Some(false)
+            is_admin: Some(false),
+            is_active: false
         }
     }
 
@@ -194,31 +197,33 @@ impl UserBuilder {
         self
     }
 
+    pub fn set_active(mut self, active: bool) -> Self {
+        self.is_active = active;
+        self
+    }
+
     pub fn finalize(mut self) -> Result<User, UserWithError> {
         use rand;
         if self.secret.is_empty() {
             self.secret = rand::random::<i32>().to_string();
         }
+
+        let user = User {
+            id: self.id,
+            name: self.name,
+            email: self.email,
+            password: self.password,
+            secret: self.secret,
+            is_admin: self.is_admin,
+            is_active: self.is_active
+        };
+
         match self.error {
             Some(error) => Err(UserWithError{
-                user: User {
-                    id: self.id,
-                    name: self.name,
-                    email: self.email,
-                    password: self.password,
-                    secret: self.secret,
-                    is_admin: self.is_admin
-                },
+                user: user,
                 error: error
             }),
-            None => Ok(User {
-                id: self.id,
-                name: self.name,
-                email: self.email,
-                password: self.password,
-                secret: self.secret,
-                is_admin: self.is_admin
-            })
+            None => Ok(user)
         }
     }
 }
@@ -265,7 +270,8 @@ impl UsersDb {
                 email       TEXT NOT NULL UNIQUE,
                 password    TEXT NOT NULL,
                 secret      TEXT NOT NULL,
-                is_admin    BOOL NOT NULL DEFAULT 0
+                is_admin    BOOL NOT NULL DEFAULT 0,
+                is_active   BOOL NOT NULL DEFAULT 0
             )", &[]).unwrap();
 
         UsersDb {
@@ -307,8 +313,10 @@ impl UsersDb {
     /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
         match self.connection.execute("INSERT INTO users
-            (name, email, password, secret, is_admin) VALUES ($1, $2, $3, $4, $5)",
-            &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin]
+            (name, email, password, secret, is_admin, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+            &[&user.name, &user.email, &user.password, &user.secret,
+              &user.is_admin, &user.is_active]
         ) {
             Ok(_) => {
                match self.read(ReadFilter::Name(user.name.to_owned())) {
@@ -394,7 +402,8 @@ impl UsersDb {
                 email: row.get(2),
                 password: row.get(3),
                 secret: row.get(4),
-                is_admin: row.get(5)
+                is_admin: row.get(5),
+                is_active: row.get(6)
             };
 
             match filter {
