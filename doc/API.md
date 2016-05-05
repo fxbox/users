@@ -83,9 +83,9 @@ The currently-defined error responses are:
 * User management
     * [POST /](#post-) :lock:
     * [GET /](#get-) :lock:
-    * [GET /:id](#get-)
-    * [PUT /:id](#put-) :lock:
-    * [DELETE /:id](#delete-) :lock:
+    * [GET /:id](#get-id)
+    * [PUT /:id](#put-id) :lock:
+    * [DELETE /:id](#delete-id) :lock:
 
 ## POST /setup
 Allow to initiate the box by registering an admin user. CORS is not allowed for this endpoint.
@@ -158,7 +158,8 @@ Failing requests may be due to the following errors:
 Create a new user registration.
 
 ### Request
-Requests must include a authorization token containing a [bearer token](#authentication).
+Requests must include an authorization token containing a [bearer token](#authentication).
+
 ___Parameters___
 * email - User email.
 
@@ -193,7 +194,7 @@ Get the list of all registered users.
 ```ssh
 GET / HTTP/1.1
 ```
-Requests must include a authorization token containing a [bearer token](#authentication).
+Requests must include an authorization token containing a [bearer token](#authentication).
 
 ### Response
 Successful requests will produce a "200 OK" response with a body containing the list of all registered users:
@@ -242,7 +243,8 @@ Failing requests may be due to the following errors:
 Edit user information.
 
 ### Request
-Requests must include a authorization token containing a [bearer token](#authentication). This token can be an activation token with a short ttl or a session token with a longer ttl.
+Requests must include an authorization token containing a [bearer token](#authentication). This token can be an activation token with a short ttl or a session token with a longer ttl.
+
 ___Parameters___
 * username - User name.
 * password - User password.
@@ -285,7 +287,7 @@ Failing requests may be due to the following errors:
 Delete a user.
 
 ### Request
-Requests must include a authorization token containing a [bearer token](#authentication).
+Requests must include an authorization token containing a [bearer token](#authentication).
 ```ssh
 DELETE /:id HTTP/1.1
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
