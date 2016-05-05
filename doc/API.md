@@ -78,7 +78,14 @@ The currently-defined error responses are:
 
 * Setup
     * [POST /setup](#post-setup)
-    * [POST /login](#post-login)
+* Login
+    * [POST /login](#post-login) :lock:
+* User management
+    * [POST /](#post-) :lock:
+    * [GET /](#get-) :lock:
+    * [GET /:id](#get-)
+    * [PUT /:id](#put-) :lock:
+    * [DELETE /:id](#delete-) :lock:
 
 ## POST /setup
 Allow to initiate the box by registering an admin user. CORS is not allowed for this endpoint.
@@ -135,7 +142,7 @@ Successful requests will produce a "201 Created" response with a session token i
 ```
 The token is provided in the body of the response:
 ```ssh
-HTTP/1.1 201 OK
+HTTP/1.1 201 Created
 Connection: close
 {
   "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
@@ -146,3 +153,147 @@ Failing requests may be due to the following errors:
 * status code 400, errno 103: Missing or malformed authentication header.
 * status code 400, errno 400: Bad request.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
+
+## POST /
+Create a new user registration.
+
+### Request
+Requests must include a authorization token containing a [bearer token](#authentication).
+___Parameters___
+* email - User email.
+
+```ssh
+POST / HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
+{
+  "email": "user@domain.org"
+}
+```
+### Response
+Successful requests will produce a "201 Created" response with a body containing an activation url:
+```ssh
+HTTP/1.1 201 Created
+Connection: close
+{
+  "activation_url": "/InR5cCI6IkpXVCJ"
+}
+```
+
+Failing requests may be due to the following errors:
+* status code 400, errno 101: Invalid email. Missing or malformed email.
+* status code 400, errno 400: Bad request.
+* status code 409, errno 409: Already exists.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
+
+## GET /
+Get the list of all registered users.
+
+### Request
+```ssh
+GET / HTTP/1.1
+```
+Requests must include a authorization token containing a [bearer token](#authentication).
+
+### Response
+Successful requests will produce a "200 OK" response with a body containing the list of all registered users:
+```ssh
+HTTP/1.1 200 OK
+Connection: close
+[{
+  "id": "hfkjsIklksadhs",
+  "username": "admin"
+  "email": "admin@domain.org"
+}, {
+  "id": "InR5cCI6IkpXVCJ",
+  "username": "pepe"
+  "email": "user@domain.org"
+}]
+```
+
+Failing requests may be due to the following errors:
+* status code 400, errno 400: Bad request.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
+
+## GET /:id
+Start user activation.
+
+### Request
+```ssh
+GET /InR5cCI6IkpXVCJ HTTP/1.1
+```
+
+### Response
+Successful requests will produce a "200 OK" response with a body containing an activation token with a short ttl and the inactive user email:
+```ssh
+HTTP/1.1 200 OK
+Connection: close
+{
+  "activation_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
+  "email": "user@domain.org"
+}
+```
+
+Failing requests may be due to the following errors:
+* status code 400, errno 400: Bad request.
+* status code 410, errno 410: Gone. The user does not exist or was already activated.
+
+## PUT /:id
+Edit user information.
+
+### Request
+Requests must include a authorization token containing a [bearer token](#authentication). This token can be an activation token with a short ttl or a session token with a longer ttl.
+___Parameters___
+* username - User name.
+* password - User password.
+
+```ssh
+PUT /:id HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
+{
+  "username": "pepe",
+  "password": "whatever"
+}
+```
+
+### Response
+Successful requests will produce a "204 No Content" response for requests authenticated with a session token or a "200 OK" response for requests authenticated with an activation token.
+```ssh
+HTTP/1.1 200 OK
+Connection: close
+{
+  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJuYW1lIjoidXNlcm5hbWUifQ.IEMuCIdMp53kiUUoBhrxv1GAPQn2L5cqhxNmCc9f_gc"
+}
+```
+
+or
+
+```ssh
+HTTP/1.1 204 No Content
+Connection: Cloe
+```
+
+Failing requests may be due to the following errors:
+* status code 400, errno 100: Invalid user name. Missing or malformed user name.
+* status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
+* status code 400, errno 400: Bad request.
+* status code 409, errno 409: Conflict. The user name is already registered.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
+
+## DELETE /:id
+Delete a user.
+
+### Request
+Requests must include a authorization token containing a [bearer token](#authentication).
+```ssh
+DELETE /:id HTTP/1.1
+Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
+```
+
+### Response
+Successful requests will produce a "204 No Content":
+```ssh
+HTTP/1.1 204 No Content
+Connection: close
+```
