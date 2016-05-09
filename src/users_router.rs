@@ -111,7 +111,7 @@ impl UsersRouter {
             .name(body.username)
             .email(body.email)
             .password(body.password)
-            .set_admin(true)
+            .admin(true)
             .finalize() {
                 Ok(user) => user,
                 Err(user_with_error) => {
@@ -435,7 +435,7 @@ describe! setup_tests {
                    .id(1).name(String::from("admin"))
                    .password(String::from("password!!"))
                    .email(String::from("admin@example.com"))
-                   .set_admin(true)
+                   .admin(true)
                    .finalize().unwrap()).ok();
         match request::post(endpoint, Headers::new(),
                             "{\"username\": \"u\",

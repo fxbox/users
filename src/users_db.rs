@@ -22,7 +22,8 @@
 //!     .name(String::from("Miles"))                  // mandatory, not empty
 //!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
 //!     .password(String::from("s800t101"))           // mandatory, at least 8 characters
-//!     .set_admin(true)                              // optional, defaults to false
+//!     .admin(true)                                  // optional, defaults to false
+//!     .active(true)                                 // optional, defaults to false
 //!     .secret(String::from("1234567890"))           // optional, defaults to random
 //!     .finalize()
 //!     .unwrap();
@@ -33,8 +34,8 @@
 //!
 
 use pwhash::bcrypt;
-use libc::{c_int};
-use rusqlite::{self, Connection};
+use libc::c_int;
+use rusqlite::{ self, Connection };
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct User {
@@ -43,7 +44,7 @@ pub struct User {
     pub email: String,
     pub password: String,
     pub secret: String,
-    pub is_admin: Option<bool>,
+    pub is_admin: bool,
     pub is_active: bool
 }
 
@@ -58,7 +59,8 @@ pub struct User {
 ///     .name(String::from("Miles"))                  // mandatory, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
 ///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
-///     .set_admin(true)                              // optional, defaults to false
+///     .admin(true)                                  // optional, defaults to false
+///     .active(true)                                 // optional, defaults to false
 ///     .secret(String::from("1234567890"))           // optional, defaults to random
 ///     .finalize()
 ///     .unwrap();
@@ -88,7 +90,8 @@ pub struct User {
 ///     .name(String::from("Miles"))                  // mandatory, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
 ///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
-///     .set_admin(true)                              // optional, defaults to false
+///     .admin(true)                                  // optional, defaults to false
+///     .active(true)                                 // optional, defaults to false
 ///     .finalize()
 ///     .unwrap();
 ///
@@ -102,7 +105,7 @@ pub struct UserBuilder {
     password: String,
     secret: String,
     error: Option<UserBuilderError>,
-    is_admin: Option<bool>,
+    is_admin: bool,
     is_active: bool
 }
 
@@ -136,7 +139,7 @@ impl UserBuilder {
             password: String::new(),
             secret: String::new(),
             error: None,
-            is_admin: Some(false),
+            is_admin: false,
             is_active: false
         }
     }
@@ -192,13 +195,13 @@ impl UserBuilder {
         self
     }
 
-    pub fn set_admin(mut self, admin: bool) -> Self {
-        self.is_admin = Some(admin);
+    pub fn admin(mut self, is_admin: bool) -> Self {
+        self.is_admin = is_admin;
         self
     }
 
-    pub fn set_active(mut self, active: bool) -> Self {
-        self.is_active = active;
+    pub fn active(mut self, is_active: bool) -> Self {
+        self.is_active = is_active;
         self
     }
 
@@ -306,7 +309,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{UsersManager, UserBuilder};
-    /// let admin = UserBuilder::new().name(String::from("admin")).set_admin(true).finalize().unwrap();
+    /// let admin = UserBuilder::new().name(String::from("admin")).admin(true).finalize().unwrap();
     /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
     /// let db = manager.get_db();
     /// assert!(db.create(&admin).is_ok());
@@ -432,7 +435,7 @@ impl UsersDb {
 
 #[cfg(test)]
 describe! user_builder_tests {
-    it "should build a user correctly" {
+    it "should build a user correctly - default values" {
         use pwhash::bcrypt;
 
         let user = UserBuilder::new()
@@ -449,9 +452,34 @@ describe! user_builder_tests {
         assert_eq!(user.email, "fox@mozilla.org");
         assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
         assert_eq!(user.secret, "secret");
+        assert_eq!(user.is_admin, false);
+        assert_eq!(user.is_active, false);
     }
 
-    it "should provide a secret event if not explicitly set" {
+    it "should build a user correctly - custom is_admin and is_active values" {
+        use pwhash::bcrypt;
+
+        let user = UserBuilder::new()
+            .id(1)
+            .name(String::from("Mr Fox"))
+            .email(String::from("fox@mozilla.org"))
+            .password(String::from("pass12345678"))
+            .secret(String::from("secret"))
+            .admin(true)
+            .active(true)
+            .finalize()
+            .unwrap();
+
+        assert_eq!(user.id, Some(1));
+        assert_eq!(user.name, "Mr Fox");
+        assert_eq!(user.email, "fox@mozilla.org");
+        assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
+        assert_eq!(user.secret, "secret");
+        assert_eq!(user.is_admin, true);
+        assert_eq!(user.is_active, true);
+    }
+
+    it "should provide a secret even if not explicitly set" {
         use pwhash::bcrypt;
 
         let user = UserBuilder::new()
@@ -652,7 +680,7 @@ describe! user_db_tests {
         let admin = UserBuilder::new().name(String::from("Admin"))
                 .email(String::from("admin@mozilla.org"))
                 .password(String::from("password!"))
-                .set_admin(true)
+                .admin(true)
                 .finalize().unwrap();
         usersDb.create(&admin).unwrap();
 
