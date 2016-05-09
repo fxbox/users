@@ -82,11 +82,11 @@ The currently-defined error responses are:
 * Login
     * [POST /login](#post-login) :lock:
 * User management
-    * [POST /users](#post-) :lock:
-    * [GET /users](#get-) :lock:
-    * [GET /users/:id](#get-id)
-    * [PUT /users/:id](#put-id) :lock:
-    * [DELETE /users/:id](#delete-id) :lock:
+    * [POST /users](#post-users) :lock:
+    * [GET /users](#get-users) :lock:
+    * [GET /users/:id](#get-users-id)
+    * [PUT /users/:id](#put-users-id) :lock:
+    * [DELETE /users/:id](#delete-users-id) :lock:
 
 ## POST /setup
 Allow to initiate the box by registering an admin user. CORS is not allowed for this endpoint.
@@ -155,7 +155,7 @@ Failing requests may be due to the following errors:
 * status code 400, errno 400: Bad request.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
-## POST /
+## POST /users
 Create a new user registration.
 
 ### Request
@@ -165,7 +165,7 @@ ___Parameters___
 * email - User email.
 
 ```ssh
-POST / HTTP/1.1
+POST /users HTTP/1.1
 Content-Type: application/json
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 {
@@ -178,7 +178,7 @@ Successful requests will produce a "201 Created" response with a body containing
 HTTP/1.1 201 Created
 Connection: close
 {
-  "activation_url": "/InR5cCI6IkpXVCJ"
+  "activation_url": "/v1/users/InR5cCI6IkpXVCJ"
 }
 ```
 
@@ -188,12 +188,12 @@ Failing requests may be due to the following errors:
 * status code 409, errno 409: Already exists.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
-## GET /
+## GET /users
 Get the list of all registered users.
 
 ### Request
 ```ssh
-GET / HTTP/1.1
+GET /users HTTP/1.1
 ```
 Requests must include an authorization token containing a [bearer token](#authentication).
 
@@ -217,12 +217,12 @@ Failing requests may be due to the following errors:
 * status code 400, errno 400: Bad request.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
-## GET /:id
+## GET /users/:id
 Start user activation.
 
 ### Request
 ```ssh
-GET /InR5cCI6IkpXVCJ HTTP/1.1
+GET /users/InR5cCI6IkpXVCJ HTTP/1.1
 ```
 
 ### Response
@@ -240,7 +240,7 @@ Failing requests may be due to the following errors:
 * status code 400, errno 400: Bad request.
 * status code 410, errno 410: Gone. The user does not exist or was already activated.
 
-## PUT /:id
+## PUT /users/:id
 Edit user information.
 
 ### Request
@@ -251,7 +251,7 @@ ___Parameters___
 * password - User password.
 
 ```ssh
-PUT /:id HTTP/1.1
+PUT /users/:id HTTP/1.1
 Content-Type: application/json
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 {
@@ -284,13 +284,13 @@ Failing requests may be due to the following errors:
 * status code 409, errno 409: Conflict. The user name is already registered.
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
-## DELETE /:id
+## DELETE /users/:id
 Delete a user.
 
 ### Request
 Requests must include an authorization token containing a [bearer token](#authentication).
 ```ssh
-DELETE /:id HTTP/1.1
+DELETE /users/:id HTTP/1.1
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 ```
 

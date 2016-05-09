@@ -19,9 +19,9 @@
 //!
 //! let new_user =
 //!     UserBuilder::new()
-//!     .name(String::from("Miles"))                  // mandatory, not empty
+//!     .name(String::from("Miles"))                  // optional, not empty
 //!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
-//!     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+//!     .password(String::from("s800t101"))           // optional, at least 8 characters
 //!     .admin(true)                                  // optional, defaults to false
 //!     .active(true)                                 // optional, defaults to false
 //!     .secret(String::from("1234567890"))           // optional, defaults to random
@@ -56,9 +56,9 @@ pub struct User {
 /// # use foxbox_users::UserBuilder;
 /// let new_user =
 ///     UserBuilder::new()
-///     .name(String::from("Miles"))                  // mandatory, not empty
+///     .name(String::from("Miles"))                  // optional, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
-///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+///     .password(String::from("s800t101"))           // optional, at least 8 characters
 ///     .admin(true)                                  // optional, defaults to false
 ///     .active(true)                                 // optional, defaults to false
 ///     .secret(String::from("1234567890"))           // optional, defaults to random
@@ -73,6 +73,7 @@ pub struct User {
 /// # use foxbox_users::{UserBuilder, UserBuilderError};
 /// let failing_user = UserBuilder::new()
 ///                    .name(String::from("Miles"))
+///                    .email(String::from("mbdyson@cyberdyne.com"))
 ///                    .password(String::from("short"))
 ///                    .finalize()
 ///                    .unwrap_err();
@@ -87,9 +88,9 @@ pub struct User {
 /// # use foxbox_users::UserBuilder;
 /// let new_user =
 ///     UserBuilder::new()
-///     .name(String::from("Miles"))                  // mandatory, not empty
+///     .name(String::from("Miles"))                  // optional, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
-///     .password(String::from("s800t101"))           // mandatory, at least 8 characters
+///     .password(String::from("s800t101"))           // optional, at least 8 characters
 ///     .admin(true)                                  // optional, defaults to false
 ///     .active(true)                                 // optional, defaults to false
 ///     .finalize()
@@ -221,6 +222,10 @@ impl UserBuilder {
             is_active: self.is_active
         };
 
+        if user.email.is_empty() {
+            self.error = Some(UserBuilderError::Email);
+        }
+
         match self.error {
             Some(error) => Err(UserWithError{
                 user: user,
@@ -269,9 +274,9 @@ impl UsersDb {
         let connection = Connection::open(path).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL UNIQUE,
+                name        TEXT,
                 email       TEXT NOT NULL UNIQUE,
-                password    TEXT NOT NULL,
+                password    TEXT,
                 secret      TEXT NOT NULL,
                 is_admin    BOOL NOT NULL DEFAULT 0,
                 is_active   BOOL NOT NULL DEFAULT 0
@@ -423,8 +428,11 @@ impl UsersDb {
 
     /// Replaces a pre-existent user, identified by its database id.
     pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
-        self.connection.execute("UPDATE users SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5
-            WHERE id=$6", &[&user.name, &user.email, &user.password, &user.secret, &user.is_admin, &id])
+        self.connection.execute("UPDATE users
+            SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5, is_active=$6
+            WHERE id=$7",
+            &[&user.name, &user.email, &user.password, &user.secret,
+              &user.is_admin, &user.is_active, &id])
     }
 
     /// Removes a user identified by its id.

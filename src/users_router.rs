@@ -55,6 +55,11 @@ impl LoginResponse {
     }
 }
 
+#[derive(Debug, RustcDecodable, RustcEncodable)]
+struct CreateUserResponse {
+    activation_url: String
+}
+
 /// Manages user-related REST operations.
 ///
 /// # Examples
@@ -112,6 +117,7 @@ impl UsersRouter {
             .email(body.email)
             .password(body.password)
             .admin(true)
+            .active(true)
             .finalize() {
                 Ok(user) => user,
                 Err(user_with_error) => {
@@ -168,7 +174,7 @@ impl UsersRouter {
                         status::InternalServerError, 501, None
                     )
                 };
-                if users.len() != 1 {
+                if users.len() != 1 || !users[0].is_active {
                     return EndpointError::with(status::Unauthorized, 401, None);
                 }
                 LoginResponse::with_user(&users[0])
@@ -180,9 +186,60 @@ impl UsersRouter {
         }
     }
 
+    /// Create a new user registration. By default the user is added to the DB
+    /// but it remains inactive until the owner sets a user name and a password.
+    ///
+    /// XXX Once we have a permissions system, this functionality will require
+    /// admin permissions.
     pub fn create_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        #[derive(RustcDecodable, Debug)]
+        struct CreateUserBody {
+            email: String
+        }
+
+        let mut payload = String::new();
+        req.body.read_to_string(&mut payload).unwrap();
+        let body: CreateUserBody = match json::decode(&payload) {
+            Ok(body) => body,
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
+            }
+        };
+
+        let user = match UserBuilder::new()
+            .email(body.email)
+            .finalize() {
+                Ok(user) => user,
+                Err(user_with_error) => {
+                    println!("{:?}", user_with_error);
+                    return from_user_builder_error(user_with_error.error);
+                }
+            };
+
+        let db = UsersDb::new(db_path);
+        match db.create(&user) {
+            Ok(user) => {
+                let activation_url = format!("/{}/users/{}", API_VERSION,
+                                             user.id.unwrap());
+
+                let body = match json::encode(&CreateUserResponse{
+                    activation_url: activation_url
+                }) {
+                    Ok(body) => body,
+                    Err(_) => return EndpointError::with(
+                        status::InternalServerError, 501,
+                        Some("CreateUserBody encoding error".to_owned())
+                    )
+                };
+                Ok(Response::with((status::Created, body)))
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
     }
 
     pub fn get_user(req: &mut Request, db_path: &str)
@@ -280,407 +337,491 @@ impl UsersRouter {
 }
 
 #[cfg(test)]
-describe! cors_tests {
+describe! users_router_tests {
     before_each {
-        use iron::{ headers, Headers };
-        use iron_test::request;
-        use super::super::users_db::get_db_environment;
-        use super::super::UsersManager;
         use super::API_VERSION;
+        #[allow(unused_imports)]
+        use super::super::{ CreateUserResponse, LoginResponse };
+
+        #[allow(unused_imports)]
+        use auth_middleware::SessionClaims;
+        #[allow(unused_imports)]
+        use crypto::sha2::Sha256;
+        #[allow(unused_imports)]
+        use errors::ErrorBody;
+        #[allow(unused_imports)]
+        use iron::{ headers, Headers };
+        #[allow(unused_imports)]
+        use iron::headers::{ Authorization, Basic, Bearer };
+        #[allow(unused_imports)]
+        use iron::prelude::Response;
+        #[allow(unused_imports)]
+        use iron::status::Status;
+        use iron_test::request;
+        use iron_test::response::extract_body_to_string;
+        #[allow(unused_imports)]
+        use jwt;
+        use rustc_serialize::Decodable;
+        use rustc_serialize::json::{ self, DecodeResult };
+        #[allow(unused_imports)]
+        use users_db::{ UserBuilder, remove_test_db, get_db_environment,
+                        ReadFilter };
+        use UsersManager;
+
+        #[allow(dead_code)]
+        fn extract_body_to<T: Decodable>(response: Response)
+            -> DecodeResult<T> {
+            json::decode(&extract_body_to_string(response))
+        }
 
         let manager = UsersManager::new(&get_db_environment());
         let router = manager.get_router_chain();
     }
 
-    it "should get the appropriate CORS headers" {
-        use iron::method::Method;
+    describe! cors_tests {
+        it "should get the appropriate CORS headers" {
+            use iron::method::Method;
 
-        let endpoints = vec![
-            (vec![Method::Post], format!("{}/login", API_VERSION))
-        ];
-        for endpoint in endpoints {
-            let (_, path) = endpoint;
-            let path = format!("http://localhost:3000/{}",
-                               &(path.replace(":", "foo")));
-            match request::options(&path, Headers::new(), &router) {
-                Ok(res) => {
-                    let headers = &res.headers;
+            let endpoints = vec![
+                (vec![Method::Post], format!("{}/login", API_VERSION))
+            ];
+            for endpoint in endpoints {
+                let (_, path) = endpoint;
+                let path = format!("http://localhost:3000/{}",
+                                   &(path.replace(":", "foo")));
+                match request::options(&path, Headers::new(), &router) {
+                    Ok(res) => {
+                        let headers = &res.headers;
+                        assert!(headers.has::<headers::AccessControlAllowOrigin>());
+                        assert!(headers.has::<headers::AccessControlAllowHeaders>());
+                        assert!(headers.has::<headers::AccessControlAllowMethods>());
+                    },
+                    _ => {
+                        assert!(false)
+                    }
+                }
+            }
+        }
+
+        it "should get the appropriate CORS headers even in case of error" {
+            match request::post(&format!("http://localhost:3000/{}/login",
+                                         API_VERSION),
+                                Headers::new(),
+                                "{}",
+                                &router) {
+                Ok(_) => {
+                    assert!(false)
+                },
+                Err(err) => {
+                    let headers = &err.response.headers;
                     assert!(headers.has::<headers::AccessControlAllowOrigin>());
                     assert!(headers.has::<headers::AccessControlAllowHeaders>());
                     assert!(headers.has::<headers::AccessControlAllowMethods>());
+                }
+
+            }
+        }
+
+        it "should not get CORS headers" {
+            match request::options(&format!("http://localhost:3000/{}/setup",
+                                            API_VERSION),
+                                   Headers::new(),
+                                   &router) {
+                Ok(res) => {
+                    let headers = &res.headers;
+                    assert!(!headers.has::<headers::AccessControlAllowOrigin>());
+                    assert!(!headers.has::<headers::AccessControlAllowHeaders>());
+                    assert!(!headers.has::<headers::AccessControlAllowMethods>());
                 },
                 _ => {
                     assert!(false)
                 }
             }
         }
-    }
+    } // cors_tests
 
-    it "should get the appropriate CORS headers even in case of error" {
-        match request::post(&format!("http://localhost:3000/{}/login", API_VERSION),
-                            Headers::new(),
-                            "{}",
-                            &router) {
-            Ok(_) => {
-                assert!(false)
-            },
-            Err(err) => {
-                let headers = &err.response.headers;
-                assert!(headers.has::<headers::AccessControlAllowOrigin>());
-                assert!(headers.has::<headers::AccessControlAllowHeaders>());
-                assert!(headers.has::<headers::AccessControlAllowMethods>());
-            }
+    describe! setup_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
 
-        }
-    }
-
-    it "should not get CORS headers" {
-        match request::options(&format!("http://localhost:3000/{}/setup", API_VERSION),
-                               Headers::new(),
-                               &router) {
-            Ok(res) => {
-                let headers = &res.headers;
-                assert!(!headers.has::<headers::AccessControlAllowOrigin>());
-                assert!(!headers.has::<headers::AccessControlAllowHeaders>());
-                assert!(!headers.has::<headers::AccessControlAllowMethods>());
-            },
-            _ => {
-                assert!(false)
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-describe! setup_tests {
-    before_each {
-        use iron::Headers;
-        use iron::status::Status;
-        use iron_test::request;
-        use super::super::users_db::{ get_db_environment, remove_test_db };
-        use super::super::UsersManager;
-
-        let manager = UsersManager::new(&get_db_environment());
-        let router = manager.get_router_chain();
-        let usersDb = manager.get_db();
-        usersDb.clear().ok();
-
-        let endpoint = &format!("http://localhost:3000/{}/setup", API_VERSION);
-    }
-
-    it "should respond 201 Created for a proper POST /setup" {
-        use super::LoginResponse;
-        use super::super::auth_middleware::SessionClaims;
-        use iron::prelude::Response;
-        use iron_test::response::extract_body_to_string;
-        use jwt;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{ self, DecodeResult };
-
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            json::decode(&extract_body_to_string(response))
+            let endpoint = &format!("http://localhost:3000/{}/setup",
+                                    API_VERSION);
         }
 
-        match request::post(endpoint, Headers::new(),
-                            "{\"username\": \"username\",
-                              \"email\": \"username@domain.com\",
-                              \"password\": \"password\"}",
-                            &router) {
-            Ok(res) => {
+        it "should respond 201 Created for a proper POST /setup" {
+            match request::post(endpoint, Headers::new(),
+                                "{\"username\": \"username\",
+                                  \"email\": \"username@domain.com\",
+                                  \"password\": \"password\"}",
+                                &router) {
+                Ok(res) => {
+                    assert_eq!(res.status.unwrap(), Status::Created);
+                    let body_obj = extract_body_to::<LoginResponse>(res).unwrap();
+                    let token = body_obj.session_token;
+                    let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
+                        .ok().unwrap().claims;
+                    assert_eq!(claims.name, "username");
+                },
+                Err(err) => {
+                    println!("{:?}", err);
+                    assert!(false);
+                }
+            };
+        }
+
+        it "should create one admin user" {
+            let body = "{\"username\": \"username\",\
+                        \"email\": \"username@domain.com\",\
+                        \"password\": \"password\"}";
+
+            if let Ok(res) = request::post(endpoint, Headers::new(), body,
+                                           &router) {
                 assert_eq!(res.status.unwrap(), Status::Created);
-                let body_obj = extract_body_to::<LoginResponse>(res).unwrap();
+                let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
+                assert_eq!(admins.len(), 1);
+                assert_eq!(admins[0].email, "username@domain.com");
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond 410 Gone if an admin account exists" {
+            // Be sure we have an admin
+            usersDb.create(&UserBuilder::new()
+                       .id(1).name(String::from("admin"))
+                       .password(String::from("password!!"))
+                       .email(String::from("admin@example.com"))
+                       .admin(true)
+                       .finalize().unwrap()).ok();
+            match request::post(endpoint, Headers::new(),
+                                "{\"username\": \"u\",
+                                  \"email\": \"u@d\",
+                                  \"password\": \"12345678\"}",
+                                &router) {
+                Ok(_) => {
+                    assert!(false);
+                },
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Gone);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 410);
+                    assert_eq!(json.message,
+                               Some("There is already an admin account".to_owned()));
+                }
+            };
+        }
+
+        it "should respond 400 BadRequest, errno 100 if username is missing" {
+            match request::post(endpoint, Headers::new(),
+                                "{\"email\": \"u@d\",
+                                  \"password\": \"12345678\"}",
+                                &router) {
+                Ok(_) => {
+                    assert!(false);
+                },
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 100);
+                    assert_eq!(json.message, Some("Invalid user name".to_owned()));
+                }
+            };
+        }
+
+        it "should respond 400 BadRequest, errno 101 if email is missing" {
+           match request::post(endpoint, Headers::new(),
+                                "{\"username\": \"u\",
+                                  \"password\": \"12345678\"}",
+                                &router) {
+                Ok(_) => {
+                    assert!(false);
+                },
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 101);
+                    assert_eq!(json.message, Some("Invalid email".to_owned()));
+                }
+            };
+        }
+
+        it "should respond 400 BadRequest, errno 102 if password is missing" {
+            match request::post(endpoint, Headers::new(),
+                                "{\"username\": \"u\",
+                                  \"email\": \"u@d\"}",
+                                &router) {
+                Ok(_) => {
+                    assert!(false);
+                },
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 102);
+                    assert_eq!(json.message,
+                        Some("Invalid password. Passwords must have a minimum of 8 chars"
+                             .to_owned()));
+                }
+            };
+        }
+
+        after_each {
+            remove_test_db();
+        }
+    } // setup_tests
+
+    describe! login_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+            // Create active user.
+            usersDb.create(&UserBuilder::new()
+                       .id(1).name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("username@example.com"))
+                       .secret(String::from("secret"))
+                       .active(true)
+                       .finalize().unwrap()).ok();
+            // Create inactive user.
+            usersDb.create(&UserBuilder::new()
+                       .id(2).name(String::from("inactive_user"))
+                       .password(String::from("password"))
+                       .email(String::from("inactive_user@example.com"))
+                       .secret(String::from("secret"))
+                       .active(false)
+                       .finalize().unwrap()).ok();
+            let endpoint = &format!("http://localhost:3000/{}/login",
+                                    API_VERSION);
+        }
+
+        it "should respond with a generic 400 Bad Request for requests missing
+            username" {
+            let invalid_credentials = Authorization(Basic {
+                username: "".to_owned(),
+                password: Some("password".to_owned())
+            });
+            let mut headers = Headers::new();
+            headers.set(invalid_credentials);
+
+            if let Err(error) = request::post(endpoint, headers, "", &router) {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 103);
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond with a generic 400 Bad Request for requests missing
+            password" {
+            let invalid_credentials = Authorization(Basic {
+                username: "username".to_owned(),
+                password: Some("".to_owned())
+            });
+            let mut headers = Headers::new();
+            headers.set(invalid_credentials);
+
+            if let Err(error) = request::post(endpoint, headers, "", &router) {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 103);
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond with a 400 Bad Request for requests missing the
+            authorization password" {
+            let headers = Headers::new();
+
+            if let Err(error) = request::post(endpoint, headers, "", &router) {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::BadRequest);
+                let json = extract_body_to::<ErrorBody>(response).unwrap();
+                assert_eq!(json.errno, 103);
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond with a 401 Unauthorized for invalid credentials" {
+            let invalid_credentials = Authorization(Basic {
+                username: "johndoe".to_owned(),
+                password: Some("password".to_owned())
+            });
+            let mut headers = Headers::new();
+            headers.set(invalid_credentials);
+
+            if let Err(error) = request::post(endpoint, headers, "", &router) {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::Unauthorized);
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond with a 401 Unauthorized for inactive user" {
+            let invalid_credentials = Authorization(Basic {
+                username: "inactive_user".to_owned(),
+                password: Some("password".to_owned())
+            });
+            let mut headers = Headers::new();
+            headers.set(invalid_credentials);
+
+            if let Err(error) = request::post(endpoint, headers, "", &router) {
+                let response = error.response;
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::Unauthorized);
+            } else {
+                assert!(false);
+            };
+        }
+
+        it "should respond with a 201 Created and a valid JWT token in body for
+            valid credentials" {
+            let valid_credentials = Authorization(Basic {
+                username: "username".to_owned(),
+                password: Some("password".to_owned())
+            });
+            let mut headers = Headers::new();
+            headers.set(valid_credentials);
+
+            if let Ok(response) = request::post(endpoint, headers, "", &router) {
+                assert!(response.status.is_some());
+                assert_eq!(response.status.unwrap(), Status::Created);
+                let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
                 let token = body_obj.session_token;
                 let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
-                    .ok().unwrap().claims;
+                            .ok().unwrap().claims;
+                assert_eq!(claims.id, 1);
                 assert_eq!(claims.name, "username");
-            },
-            Err(err) => {
-                println!("{:?}", err);
+            } else {
                 assert!(false);
-            }
-        };
-    }
-
-    it "should create one admin user" {
-        use super::super::users_db::ReadFilter;
-
-        let body = "{\"username\": \"username\",\
-                    \"email\": \"username@domain.com\",\
-                    \"password\": \"password\"}";
-
-        if let Ok(res) = request::post(endpoint, Headers::new(), body, &router) {
-            assert_eq!(res.status.unwrap(), Status::Created);
-            let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
-            assert_eq!(admins.len(), 1);
-            assert_eq!(admins[0].email, "username@domain.com");
-        } else {
-            assert!(false);
-        };
-    }
-
-    it "should respond 410 Gone if an admin account exists" {
-        use iron::prelude::Response;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            use iron_test::response::extract_body_to_string;
-            json::decode(&extract_body_to_string(response))
+            };
         }
 
-        use super::super::errors::{ErrorBody};
+        after_each {
+            remove_test_db();
+        }
+    } // login_tests
 
-        // Be sure we have an admin
-        use super::super::users_db::UserBuilder;
-        usersDb.create(&UserBuilder::new()
-                   .id(1).name(String::from("admin"))
-                   .password(String::from("password!!"))
-                   .email(String::from("admin@example.com"))
-                   .admin(true)
-                   .finalize().unwrap()).ok();
-        match request::post(endpoint, Headers::new(),
-                            "{\"username\": \"u\",
-                              \"email\": \"u@d\",
-                              \"password\": \"12345678\"}",
-                            &router) {
-            Ok(_) => {
-                assert!(false);
-            },
-            Err(error) => {
-                let response = error.response;
-                assert!(response.status.is_some());
-                assert_eq!(response.status.unwrap(), Status::Gone);
-                let json = extract_body_to::<ErrorBody>(response).unwrap();
-                assert_eq!(json.errno, 410);
-                assert_eq!(json.message, Some("There is already an admin account".to_owned()));
-            }
-        };
-    }
+    describe! create_user_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+            let user = UserBuilder::new()
+                       .id(1).name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("username@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
 
-    it "should respond 400 BadRequest, errno 100 if username is missing" {
-        use iron::prelude::Response;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            use iron_test::response::extract_body_to_string;
-            json::decode(&extract_body_to_string(response))
+            let create_user_endpoint = &format!("http://localhost:3000/{}/users",
+                                                API_VERSION);
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.unwrap(),
+                name: user.name.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            // With Authorization header.
+            let mut headers = Headers::new();
+            headers.set(Authorization(Bearer { token: signed.to_owned() }));
         }
 
-        use super::super::errors::{ErrorBody};
-
-        match request::post(endpoint, Headers::new(),
-                            "{\"email\": \"u@d\",
-                              \"password\": \"12345678\"}",
-                            &router) {
-            Ok(_) => {
-                assert!(false);
-            },
-            Err(error) => {
-                let response = error.response;
-                assert!(response.status.is_some());
-                assert_eq!(response.status.unwrap(), Status::BadRequest);
-                let json = extract_body_to::<ErrorBody>(response).unwrap();
-                assert_eq!(json.errno, 100);
-                assert_eq!(json.message, Some("Invalid user name".to_owned()));
-            }
-        };
-    }
-
-    it "should respond 400 BadRequest, errno 101 if email is missing" {
-        use iron::prelude::Response;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            use iron_test::response::extract_body_to_string;
-            json::decode(&extract_body_to_string(response))
+        it "should not allow the creation of a new user to non authenticated
+            requests" {
+            match request::post(create_user_endpoint, Headers::new(), "",
+                                &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Unauthorized);
+                }
+            };
         }
 
-        use super::super::errors::{ErrorBody};
-
-        match request::post(endpoint, Headers::new(),
-                            "{\"username\": \"u\",
-                              \"password\": \"12345678\"}",
-                            &router) {
-            Ok(_) => {
-                assert!(false);
-            },
-            Err(error) => {
-                let response = error.response;
-                assert!(response.status.is_some());
-                assert_eq!(response.status.unwrap(), Status::BadRequest);
-                let json = extract_body_to::<ErrorBody>(response).unwrap();
-                assert_eq!(json.errno, 101);
-                assert_eq!(json.message, Some("Invalid email".to_owned()));
+        it "should not allow the creation of a new user without email" {
+            match request::post(create_user_endpoint, headers, "{}",
+                                &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 101);
+                }
             }
-        };
-    }
-
-    it "should respond 400 BadRequest, errno 102 if password is missing" {
-        use iron::prelude::Response;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            use iron_test::response::extract_body_to_string;
-            json::decode(&extract_body_to_string(response))
         }
 
-        use super::super::errors::{ErrorBody};
-
-        match request::post(endpoint, Headers::new(),
-                            "{\"username\": \"u\",
-                              \"email\": \"u@d\"}",
-                            &router) {
-            Ok(_) => {
-                assert!(false);
-            },
-            Err(error) => {
-                let response = error.response;
-                assert!(response.status.is_some());
-                assert_eq!(response.status.unwrap(), Status::BadRequest);
-                let json = extract_body_to::<ErrorBody>(response).unwrap();
-                assert_eq!(json.errno, 102);
-                assert_eq!(json.message,
-                    Some("Invalid password. Passwords must have a minimum of 8 chars".to_owned()));
-            }
-        };
-    }
-
-    after_each {
-        remove_test_db();
-    }
-}
-
-#[cfg(test)]
-describe! login_tests {
-    before_each {
-        use super::super::users_db::{UserBuilder,
-                                     remove_test_db,
-                                     get_db_environment};
-        use super::super::UsersManager;
-        use iron::prelude::Response;
-        use iron::Headers;
-        #[allow(unused_imports)]
-        use iron::headers::{Authorization, Basic};
-        use iron::status::Status;
-        use iron_test::request;
-        use iron_test::response::extract_body_to_string;
-        use rustc_serialize::Decodable;
-        use rustc_serialize::json::{self, DecodeResult};
-        #[allow(unused_imports)]
-        use super::super::errors::{ErrorBody};
-
-        #[allow(dead_code)]
-        fn extract_body_to<T: Decodable>(response: Response) -> DecodeResult<T> {
-            json::decode(&extract_body_to_string(response))
+        it "should allow the creation of a new user" {
+            match request::post(create_user_endpoint, headers,
+                                "{\"email\": \"user@domain.org\"}",
+                                &router) {
+                Ok(response) => {
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Created);
+                    let body_obj =
+                        extract_body_to::<CreateUserResponse>(response).unwrap();
+                    assert!(!body_obj.activation_url.is_empty());
+                    match usersDb.read(
+                        ReadFilter::Email("user@domain.org".to_owned())
+                    ) {
+                        Ok(users) => {
+                            assert_eq!(users.len(), 1);
+                            assert_eq!(users[0].is_active, false);
+                        },
+                        Err(_) => assert!(false)
+                    };
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false);
+                }
+              }
         }
 
-        let manager = UsersManager::new(&get_db_environment());
-        let router = manager.get_router_chain();
-        let usersDb = manager.get_db();
-        usersDb.clear().ok();
-        usersDb.create(&UserBuilder::new()
-                   .id(1).name(String::from("username"))
-                   .password(String::from("password"))
-                   .email(String::from("username@example.com"))
-                   .secret(String::from("secret"))
-                   .finalize().unwrap()).ok();
-        let endpoint = &format!("http://localhost:3000/{}/login", API_VERSION);
-    }
+        it "should not allow the creation of a user that already exists" {
+            match request::post(create_user_endpoint, headers,
+                                "{\"email\": \"user@domain.org\"}",
+                                &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 409);
+                }
+              }
+        }
 
-    it "should respond with a generic 400 Bad Request for requests missing username" {
-        let invalid_credentials = Authorization(Basic {
-            username: "".to_owned(),
-            password: Some("password".to_owned())
-        });
-        let mut headers = Headers::new();
-        headers.set(invalid_credentials);
-
-        if let Err(error) = request::post(endpoint, headers, "", &router) {
-            let response = error.response;
-            assert!(response.status.is_some());
-            assert_eq!(response.status.unwrap(), Status::BadRequest);
-            let json = extract_body_to::<ErrorBody>(response).unwrap();
-            assert_eq!(json.errno, 103);
-        } else {
-            assert!(false);
-        };
-    }
-
-    it "should respond with a generic 400 Bad Request for requests missing password" {
-        let invalid_credentials = Authorization(Basic {
-            username: "username".to_owned(),
-            password: Some("".to_owned())
-        });
-        let mut headers = Headers::new();
-        headers.set(invalid_credentials);
-
-        if let Err(error) = request::post(endpoint, headers, "", &router) {
-            let response = error.response;
-            assert!(response.status.is_some());
-            assert_eq!(response.status.unwrap(), Status::BadRequest);
-            let json = extract_body_to::<ErrorBody>(response).unwrap();
-            assert_eq!(json.errno, 103);
-        } else {
-            assert!(false);
-        };
-    }
-
-    it "should respond with a 400 Bad Request for requests missing the authorization password" {
-        let headers = Headers::new();
-
-        if let Err(error) = request::post(endpoint, headers, "", &router) {
-            let response = error.response;
-            assert!(response.status.is_some());
-            assert_eq!(response.status.unwrap(), Status::BadRequest);
-            let json = extract_body_to::<ErrorBody>(response).unwrap();
-            assert_eq!(json.errno, 103);
-        } else {
-            assert!(false);
-        };
-    }
-
-    it "should respond with a 401 Unauthorized for invalid credentials" {
-        let invalid_credentials = Authorization(Basic {
-            username: "johndoe".to_owned(),
-            password: Some("password".to_owned())
-        });
-        let mut headers = Headers::new();
-        headers.set(invalid_credentials);
-
-        if let Err(error) = request::post(endpoint, headers, "", &router) {
-            let response = error.response;
-            assert!(response.status.is_some());
-            assert_eq!(response.status.unwrap(), Status::Unauthorized);
-        } else {
-            assert!(false);
-        };
-    }
-
-    it "should respond with a 201 Created and a valid JWT token in body for valid credentials" {
-        use jwt;
-        use super::LoginResponse;
-        use super::super::auth_middleware::SessionClaims;
-
-        let valid_credentials = Authorization(Basic {
-            username: "username".to_owned(),
-            password: Some("password".to_owned())
-        });
-        let mut headers = Headers::new();
-        headers.set(valid_credentials);
-
-        if let Ok(response) = request::post(endpoint, headers, "", &router) {
-            assert!(response.status.is_some());
-            assert_eq!(response.status.unwrap(), Status::Created);
-            let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
-            let token = body_obj.session_token;
-            let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token).ok().unwrap().claims;
-            assert_eq!(claims.id, 1);
-            assert_eq!(claims.name, "username");
-        } else {
-            assert!(false);
-        };
-    }
-
-    after_each {
-        remove_test_db();
-    }
-}
+        after {
+            remove_test_db();
+        }
+    } // create_user_tests
+} // users_router_tests
