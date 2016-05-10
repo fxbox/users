@@ -30,11 +30,11 @@ type Credentials = (String, String);
 pub static API_VERSION: &'static str = "v1";
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
-struct LoginResponse {
+struct SessionTokenResponse {
     session_token: String
 }
 
-impl LoginResponse {
+impl SessionTokenResponse {
     fn with_user(user: &User) -> IronResult<Response> {
         let session_token = match SessionToken::from_user(&user) {
             Ok(token) => token,
@@ -42,7 +42,7 @@ impl LoginResponse {
                 status::InternalServerError, 501, None
             )
         };
-        let body_obj = LoginResponse{
+        let body_obj = SessionTokenResponse{
            session_token: session_token
         };
         let body = match json::encode(&body_obj) {
@@ -128,7 +128,7 @@ impl UsersRouter {
 
         match db.create(&admin) {
             Ok(admin) => {
-                LoginResponse::with_user(&admin)
+                SessionTokenResponse::with_user(&admin)
             },
             Err(error) => {
                 println!("{:?}", error);
@@ -177,7 +177,7 @@ impl UsersRouter {
                 if users.len() != 1 || !users[0].is_active {
                     return EndpointError::with(status::Unauthorized, 401, None);
                 }
-                LoginResponse::with_user(&users[0])
+                SessionTokenResponse::with_user(&users[0])
             } else {
                 error103
             }
@@ -242,9 +242,77 @@ impl UsersRouter {
         }
     }
 
-    pub fn get_user(req: &mut Request, db_path: &str)
+    /// Provide the necessary information and a temporary session token to
+    /// complete a user registration.
+    pub fn get_user_activation_info(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        let user_id = req.extensions.get::<Router>().unwrap()
+            .find("id").unwrap_or("").to_owned();
+
+        if user_id.is_empty() {
+            return EndpointError::with(status::InternalServerError, 501,
+                                       Some("Missing user id".to_owned()));
+        }
+
+        // XXX Move from i32 to string ids
+        let user_id: i32 = match user_id.parse() {
+            Ok(user_id) => user_id,
+            Err(_) => return EndpointError::with(
+                status::BadRequest, 400, Some("Invalid user id".to_owned())
+            )
+        };
+
+        let user: User;
+
+        let db = UsersDb::new(db_path);
+        if let Ok(users) = db.read(ReadFilter::All) {
+            println!("{:?} {}", users, user_id)
+        };
+
+
+        match db.read(ReadFilter::Id(user_id)) {
+            Ok(users) => {
+                if users.is_empty() {
+                    return EndpointError::with(status::NotFound, 404, None);
+                }
+
+                if users.len() > 1 {
+                    return EndpointError::with(status::InternalServerError, 501,
+                        Some("Duplicated user".to_owned()));
+                }
+
+                user = users[0].clone();
+                println!("{:?}", user);
+                if user.is_active {
+                    return EndpointError::with(status::Gone, 410,
+                        Some("User already activated".to_owned()));
+                }
+            },
+            Err(_) => {
+                return EndpointError::with(status::NotFound, 404, None);
+            }
+        }
+
+        // XXX Add short ttl to session token.
+        // XXX Once we have a permissions system we'll need to add a user
+        //     edition scope to the session token.
+        let session_token = match SessionToken::from_user(&user) {
+            Ok(token) => token,
+            Err(_) => return EndpointError::with(
+                status::InternalServerError, 501, None
+            )
+        };
+
+        let body = match json::encode(&SessionTokenResponse {
+            session_token: session_token,
+        }) {
+            Ok(body) => body,
+            Err(_) => return EndpointError::with(
+                status::InternalServerError, 501, None
+            )
+        };
+
+        Ok(Response::with((status::Ok, body)))
     }
 
     pub fn get_all_users(req: &mut Request, db_path: &str)
@@ -290,7 +358,7 @@ impl UsersRouter {
         let data = String::from(db_path);
         router.get(format!("/{}/users/:id", API_VERSION),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_user(req, &data)
+            UsersRouter::get_user_activation_info(req, &data)
         });
 
         let data = String::from(db_path);
@@ -341,7 +409,7 @@ describe! users_router_tests {
     before_each {
         use super::API_VERSION;
         #[allow(unused_imports)]
-        use super::super::{ CreateUserResponse, LoginResponse };
+        use super::super::{ CreateUserResponse, SessionTokenResponse };
 
         #[allow(unused_imports)]
         use auth_middleware::SessionClaims;
@@ -457,7 +525,7 @@ describe! users_router_tests {
                                 &router) {
                 Ok(res) => {
                     assert_eq!(res.status.unwrap(), Status::Created);
-                    let body_obj = extract_body_to::<LoginResponse>(res).unwrap();
+                    let body_obj = extract_body_to::<SessionTokenResponse>(res).unwrap();
                     let token = body_obj.session_token;
                     let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                         .ok().unwrap().claims;
@@ -703,7 +771,7 @@ describe! users_router_tests {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Created);
-                    let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
+                    let body_obj = extract_body_to::<SessionTokenResponse>(response).unwrap();
                     let token = body_obj.session_token;
                     let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                                 .ok().unwrap().claims;
@@ -809,4 +877,75 @@ describe! users_router_tests {
             remove_test_db();
         }
     } // create_user_tests
+
+    describe! get_user_activation_info_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+       }
+
+        it "should return 404 NotFound for unknown user id" {
+            let unknown_id = 111;
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, unknown_id);
+            match request::get(endpoint, Headers::new(), &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert_eq!(response.status.unwrap(), Status::NotFound);
+                }
+            };
+        }
+
+        it "should return 410 Gone for already active user id" {
+            let active_user = UserBuilder::new()
+                .name(String::from("username"))
+                .password(String::from("password"))
+                .email(String::from("active_user@example.com"))
+                .active(true)
+                .finalize().unwrap();
+            let user = usersDb.create(&active_user).unwrap();
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::get(endpoint, Headers::new(), &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert_eq!(response.status.unwrap(), Status::Gone);
+                }
+            };
+        }
+
+        it "should return 200 OK with a session token inactive user id" {
+            let inactive_user = UserBuilder::new()
+                .name(String::from("username"))
+                .password(String::from("password"))
+                .email(String::from("inactive_user@example.com"))
+                .finalize().unwrap();
+            let user = usersDb.create(&inactive_user).unwrap();
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::get(endpoint, Headers::new(), &router) {
+                Ok(response) => {
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Ok);
+                    let body_obj = extract_body_to::<SessionTokenResponse>
+                                   (response).unwrap();
+                    let token = body_obj.session_token;
+                    let claims = jwt::Token::<jwt::Header, SessionClaims>
+                                    ::parse(&token).ok().unwrap().claims;
+                    assert_eq!(claims.id, user.id.unwrap());
+                    assert_eq!(claims.email, user.email);
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false)
+                }
+            };
+        }
+
+        after {
+            remove_test_db();
+        }
+    } // get_user_activation_info_tests
 } // users_router_tests
