@@ -26,12 +26,12 @@ use urlencoded::UrlEncodedQuery;
 
 /// Structure representing [JWT claims section](https://jwt.io/introduction/).
 ///
-/// Claims made by the authentication protocol includes `id` and `name` with
-/// database unique id and username respectively.
+/// Claims made by the authentication protocol includes `id` and `email` with
+/// database unique id and email respectively.
 #[derive(Default, RustcDecodable, RustcEncodable)]
 pub struct SessionClaims{
     pub id: i32,
-    pub name: String
+    pub email: String
 }
 
 /// Factory to create a session token `String` for a user in the database.
@@ -42,7 +42,7 @@ impl SessionToken {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned()
+            email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         token.signed(
@@ -349,7 +349,7 @@ describe! auth_middleware_tests {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned()
+            email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         let signed = token.signed(

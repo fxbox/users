@@ -138,7 +138,7 @@ impl UsersRouter {
     }
 
     fn login(req: &mut Request, db_path: &str) -> IronResult<Response> {
-        // Return Some pair of valid credentials if both username and password
+        // Return Some pair of valid credentials if both email and password
         // are provided or None elsewhere.
         fn credentials_from_header(auth: &Authorization<Basic>)
             -> Option<Credentials> {
@@ -165,10 +165,10 @@ impl UsersRouter {
             Some("Missing or malformed authentication header".to_owned()));
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
-            if let Some((username, password)) = credentials_from_header(auth) {
+            if let Some((email, password)) = credentials_from_header(auth) {
                 let users_db = UsersDb::new(db_path);
                 let users = match users_db.read(
-                    ReadFilter::Credentials(username, password)) {
+                    ReadFilter::Credentials(email, password)) {
                     Ok(users) => users,
                     Err(_) => return EndpointError::with(
                         status::InternalServerError, 501, None
@@ -461,7 +461,7 @@ describe! users_router_tests {
                     let token = body_obj.session_token;
                     let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                         .ok().unwrap().claims;
-                    assert_eq!(claims.name, "username");
+                    assert_eq!(claims.email, "username@domain.com");
                 },
                 Err(err) => {
                     println!("{:?}", err);
@@ -659,7 +659,7 @@ describe! users_router_tests {
 
         it "should respond with a 401 Unauthorized for invalid credentials" {
             let invalid_credentials = Authorization(Basic {
-                username: "johndoe".to_owned(),
+                username: "johndoe@example.com".to_owned(),
                 password: Some("password".to_owned())
             });
             let mut headers = Headers::new();
@@ -676,7 +676,7 @@ describe! users_router_tests {
 
         it "should respond with a 401 Unauthorized for inactive user" {
             let invalid_credentials = Authorization(Basic {
-                username: "inactive_user".to_owned(),
+                username: "inactive_user@example.com".to_owned(),
                 password: Some("password".to_owned())
             });
             let mut headers = Headers::new();
@@ -694,23 +694,23 @@ describe! users_router_tests {
         it "should respond with a 201 Created and a valid JWT token in body for
             valid credentials" {
             let valid_credentials = Authorization(Basic {
-                username: "username".to_owned(),
+                username: "username@example.com".to_owned(),
                 password: Some("password".to_owned())
             });
             let mut headers = Headers::new();
             headers.set(valid_credentials);
-
-            if let Ok(response) = request::post(endpoint, headers, "", &router) {
-                assert!(response.status.is_some());
-                assert_eq!(response.status.unwrap(), Status::Created);
-                let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
-                let token = body_obj.session_token;
-                let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
-                            .ok().unwrap().claims;
-                assert_eq!(claims.id, 1);
-                assert_eq!(claims.name, "username");
-            } else {
-                assert!(false);
+            match request::post(endpoint, headers, "", &router) {
+                Ok(response) => {
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Created);
+                    let body_obj = extract_body_to::<LoginResponse>(response).unwrap();
+                    let token = body_obj.session_token;
+                    let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
+                                .ok().unwrap().claims;
+                    assert_eq!(claims.id, 1);
+                    assert_eq!(claims.email, "username@example.com");
+                },
+                Err(_) => assert!(false)
             };
         }
 
@@ -738,7 +738,7 @@ describe! users_router_tests {
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
                 id: user.id.unwrap(),
-                name: user.name.to_owned()
+                email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
             let signed = token.signed(
@@ -801,21 +801,6 @@ describe! users_router_tests {
                 Err(error) => {
                     println!("{:?}", error);
                     assert!(false);
-                }
-              }
-        }
-
-        it "should not allow the creation of a user that already exists" {
-            match request::post(create_user_endpoint, headers,
-                                "{\"email\": \"user@domain.org\"}",
-                                &router) {
-                Ok(_) => assert!(false),
-                Err(error) => {
-                    let response = error.response;
-                    assert!(response.status.is_some());
-                    assert_eq!(response.status.unwrap(), Status::BadRequest);
-                    let json = extract_body_to::<ErrorBody>(response).unwrap();
-                    assert_eq!(json.errno, 409);
                 }
               }
         }

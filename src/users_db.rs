@@ -20,7 +20,7 @@
 //! let new_user =
 //!     UserBuilder::new()
 //!     .name(String::from("Miles"))                  // optional, not empty
-//!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
+//!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, unique, not empty
 //!     .password(String::from("s800t101"))           // optional, at least 8 characters
 //!     .admin(true)                                  // optional, defaults to false
 //!     .active(true)                                 // optional, defaults to false
@@ -57,7 +57,7 @@ pub struct User {
 /// let new_user =
 ///     UserBuilder::new()
 ///     .name(String::from("Miles"))                  // optional, not empty
-///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
+///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, unique, not empty
 ///     .password(String::from("s800t101"))           // optional, at least 8 characters
 ///     .admin(true)                                  // optional, defaults to false
 ///     .active(true)                                 // optional, defaults to false
@@ -254,7 +254,6 @@ pub struct UsersDb {
     connection: Connection
 }
 
-
 #[cfg(test)]
 pub fn get_db_environment() -> String {
     use libc::getpid;
@@ -327,7 +326,7 @@ impl UsersDb {
               &user.is_admin, &user.is_active]
         ) {
             Ok(_) => {
-               match self.read(ReadFilter::Name(user.name.to_owned())) {
+               match self.read(ReadFilter::Email(user.email.to_owned())) {
                    Ok(users) => Ok(users[0].to_owned()),
                    Err(err) => Err(err)
                }
@@ -379,19 +378,12 @@ impl UsersDb {
                 );
                 try!(stmt.query(&[&escape(name)]))
             },
-            ReadFilter::Email(ref email) => {
+            ReadFilter::Email(ref email) |
+            ReadFilter::Credentials(ref email, _) => {
                 stmt = try!(
                     self.connection.prepare("SELECT * FROM users WHERE email=$1")
                 );
                 try!(stmt.query(&[&escape(email)]))
-            },
-            ReadFilter::Credentials(ref user, _) => {
-                stmt = try!(
-                    self.connection.prepare(
-                        "SELECT * FROM users WHERE (name=$1 OR email=$2)"
-                    )
-                );
-                try!(stmt.query(&[&escape(user), &escape(user)]))
             },
             ReadFilter::IsAdmin(is_admin) => {
                 stmt = try!(
@@ -611,24 +603,10 @@ describe! user_db_tests {
         }
     }
 
-    it "should read user by name or email with name" {
+    it "should read user by credentials" {
         for (i, user) in defaultUsers.iter().enumerate() {
             let users = usersDb.read(ReadFilter::Credentials(
-                user.name.clone(), format!("password{}", i + 1))
-            ).unwrap();
-            assert_eq!(users.len(), 1);
-            assert_eq!(users[0].id, user.id);
-            assert_eq!(users[0].name, user.name);
-            assert_eq!(users[0].email, user.email);
-            assert_eq!(users[0].password, user.password);
-            assert_eq!(users[0].secret, user.secret);
-        }
-    }
-
-    it "should read user by name or email with email" {
-        for (i, user) in defaultUsers.iter().enumerate() {
-            let users = usersDb.read(ReadFilter::Credentials(
-                user.name.clone(), format!("password{}", i + 1))
+                user.email.clone(), format!("password{}", i + 1))
             ).unwrap();
             assert_eq!(users.len(), 1);
             assert_eq!(users[0].id, user.id);

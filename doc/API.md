@@ -93,7 +93,7 @@ Allow to initiate the box by registering an admin user. CORS is not allowed for 
 ### Request
 ___Parameters___
 * email - Admin email.
-* username - User name. Defaults to "admin".
+* username - Optional. User name. Defaults to "admin".
 * password - Admin password.
 ```ssh
 POST /setup/ HTTP/1.1
@@ -127,7 +127,7 @@ Failing requests may be due to the following errors:
 ## POST /login
 Authenticates a user.
 ### Request
-Requests must include a [basic authorization header](https://en.wikipedia.org/wiki/Basic_access_authentication#Client_side) with `username:password` encoded in Base64 according to [RFC2617](http://www.ietf.org/rfc/rfc2617.txt)
+Requests must include a [basic authorization header](https://en.wikipedia.org/wiki/Basic_access_authentication#Client_side) with `email:password` encoded in Base64 according to [RFC2617](http://www.ietf.org/rfc/rfc2617.txt)
 ```ssh
 POST /setup/ HTTP/1.1
 Content-Type: application/json
@@ -138,7 +138,7 @@ Successful requests will produce a "201 Created" response with a session token i
 ```js
 {
     "id": 1,
-    "name": "username"
+    "email": "user@domain.org"
 }
 ```
 The token is provided in the body of the response:
@@ -274,7 +274,7 @@ or
 
 ```ssh
 HTTP/1.1 204 No Content
-Connection: Cloe
+Connection: close
 ```
 
 Failing requests may be due to the following errors:
