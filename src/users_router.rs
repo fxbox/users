@@ -323,6 +323,8 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::All) {
             Ok(users) => {
+                // XXX UserBuilder should use Option for several values
+                //     and allow to finalize ignoring certain fields.
                 let users = users.iter().map(
                     |user| UserBuilder::new()
                         .id(user.id.unwrap())
@@ -440,7 +442,8 @@ describe! users_router_tests {
     before_each {
         use super::API_VERSION;
         #[allow(unused_imports)]
-        use super::super::{ CreateUserResponse, SessionTokenResponse };
+        use super::super::{ CreateUserResponse, GetAllUsersResponse,
+                            SessionTokenResponse };
 
         #[allow(unused_imports)]
         use auth_middleware::SessionClaims;
@@ -975,8 +978,115 @@ describe! users_router_tests {
             };
         }
 
-        after {
+        after_each {
             remove_test_db();
         }
     } // get_user_activation_info_tests
+
+    describe! get_users_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+            // Admin user.
+            let user = UserBuilder::new()
+                       .id(1).name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("username@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.unwrap(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            // With Authorization header.
+            let mut headers = Headers::new();
+            headers.set(Authorization(Bearer { token: signed.to_owned() }));
+
+            let get_users_endpoint = &format!("http://localhost:3000/{}/users",
+                                              API_VERSION);
+        }
+
+        it "should not allow to get user list to non authenticated requests" {
+            match request::get(get_users_endpoint, Headers::new(), &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Unauthorized);
+                }
+            };
+        }
+
+        it "should return 200 OK with a list of one user" {
+            match request::get(get_users_endpoint, headers, &router) {
+                Ok(response) => {
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Ok);
+                    let body_obj = extract_body_to::<GetAllUsersResponse>
+                                   (response).unwrap();
+                    assert_eq!(body_obj.users.len(), 1);
+                    assert_eq!(body_obj.users[0].id, Some(1));
+                    assert_eq!(body_obj.users[0].name, "username".to_owned());
+                    assert_eq!(body_obj.users[0].email,
+                               "username@example.com".to_owned());
+                    assert_eq!(body_obj.users[0].is_admin, true);
+                    assert_eq!(body_obj.users[0].is_active, true);
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false)
+                }
+            };
+        }
+
+        it "should return 200 OK with a list of two users" {
+            usersDb.create(&UserBuilder::new()
+                       .id(2).name(String::from("inactive_user"))
+                       .password(String::from("password"))
+                       .email(String::from("inactive_user@example.com"))
+                       .secret(String::from("secret"))
+                       .finalize().unwrap()).ok();
+
+            match request::get(get_users_endpoint, headers, &router) {
+                Ok(response) => {
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Ok);
+                    let body_obj = extract_body_to::<GetAllUsersResponse>
+                                   (response).unwrap();
+                    assert_eq!(body_obj.users.len(), 2);
+                    assert_eq!(body_obj.users[0].id, Some(1));
+                    assert_eq!(body_obj.users[0].name, "username".to_owned());
+                    assert_eq!(body_obj.users[0].email,
+                               "username@example.com".to_owned());
+                    assert_eq!(body_obj.users[0].is_admin, true);
+                    assert_eq!(body_obj.users[0].is_active, true);
+                    assert_eq!(body_obj.users[1].id, Some(2));
+                    assert_eq!(body_obj.users[1].name, "inactive_user".to_owned());
+                    assert_eq!(body_obj.users[1].email,
+                               "inactive_user@example.com".to_owned());
+                    assert_eq!(body_obj.users[1].is_admin, false);
+                    assert_eq!(body_obj.users[1].is_active, false);
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false)
+                }
+            };
+        }
+
+        after_each {
+            remove_test_db();
+        }
+    } // get_user_activation_info_tests
+
 } // users_router_tests
