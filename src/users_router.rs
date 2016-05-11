@@ -345,6 +345,11 @@ impl UsersRouter {
         EndpointError::with(status::NotFound, 404, None)
     }
 
+    pub fn activate_user(req: &mut Request, db_path: &str)
+        -> IronResult<Response> {
+        EndpointError::with(status::NotFound, 404, None)
+    }
+
     pub fn delete_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
         EndpointError::with(status::NotFound, 404, None)
@@ -394,25 +399,26 @@ impl UsersRouter {
         });
 
         let data = String::from(db_path);
+        router.put(format!("/{}/users/:id/activate", API_VERSION),
+                   move |req: &mut Request| -> IronResult<Response> {
+            UsersRouter::activate_user(req, &data)
+        });
+
+        let data = String::from(db_path);
         router.delete(format!("/{}/users/:id", API_VERSION),
                       move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::delete_user(req, &data)
         });
 
         let cors = CORS::new(vec![
-            (vec![Method::Post],
-             format!("/{}/login", API_VERSION)),
-            (vec![Method::Post, Method::Get],
-             format!("/{}/users", API_VERSION)),
-            (vec![Method::Get, Method::Put, Method::Delete],
-             format!("/{}/users/:id", API_VERSION))
+            (vec![Method::Post], format!("/{}/login", API_VERSION))
         ]);
 
         let data = String::from(db_path);
         let auth_middleware = AuthMiddleware::new(vec![
             AuthEndpoint(vec![Method::Post, Method::Get],
                          format!("/{}/users", API_VERSION)),
-            AuthEndpoint(vec![Method::Put, Method::Delete],
+            AuthEndpoint(vec![Method::Get, Method::Put, Method::Delete],
                          format!("/{}/users/:id", API_VERSION))
         ], data);
 
@@ -903,17 +909,62 @@ describe! users_router_tests {
         before_each {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
-       }
+            // Admin user.
+            let user = UserBuilder::new()
+                       .id(1).name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("username@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.unwrap(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            // With Authorization header.
+            let mut headers = Headers::new();
+            headers.set(Authorization(Bearer { token: signed.to_owned() }));
+        }
 
         it "should return 404 NotFound for unknown user id" {
             let unknown_id = 111;
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, unknown_id);
-            match request::get(endpoint, Headers::new(), &router) {
+            match request::get(endpoint, headers, &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
                     assert_eq!(response.status.unwrap(), Status::NotFound);
+                }
+            };
+        }
+
+        it "should not allow getting user info to non authenticated
+            requests" {
+            let inactive_user = UserBuilder::new()
+                .id(1)
+                .name(String::from("username"))
+                .password(String::from("password"))
+                .email(String::from("inactive_user@example.com"))
+                .finalize().unwrap();
+            let user = usersDb.create(&inactive_user).unwrap();
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::get(endpoint, Headers::new(), &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Unauthorized);
                 }
             };
         }
@@ -928,14 +979,14 @@ describe! users_router_tests {
             let user = usersDb.create(&inactive_user).unwrap();
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, user.id.unwrap());
-            match request::get(endpoint, Headers::new(), &router) {
+            match request::get(endpoint, headers, &router) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Ok);
                     let body_obj = extract_body_to::<GetUserResponse>
                                    (response).unwrap();
-                    assert_eq!(body_obj.user.id, inactive_user.id);
-                    assert_eq!(body_obj.user.email, inactive_user.email);
+                    assert_eq!(body_obj.user.id, user.id);
+                    assert_eq!(body_obj.user.email, user.email);
                     assert_eq!(body_obj.user.is_admin, false);
                     assert_eq!(body_obj.user.is_active, false);
                 },
