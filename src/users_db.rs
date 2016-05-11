@@ -37,7 +37,7 @@ use pwhash::bcrypt;
 use libc::c_int;
 use rusqlite::{ self, Connection };
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct User {
     pub id: Option<i32>,
     pub name: String,

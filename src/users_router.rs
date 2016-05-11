@@ -60,6 +60,11 @@ struct CreateUserResponse {
     activation_url: String
 }
 
+#[derive(Debug, RustcDecodable, RustcEncodable)]
+struct GetAllUsersResponse {
+    users: Vec<User>
+}
+
 /// Manages user-related REST operations.
 ///
 /// # Examples
@@ -265,11 +270,6 @@ impl UsersRouter {
         let user: User;
 
         let db = UsersDb::new(db_path);
-        if let Ok(users) = db.read(ReadFilter::All) {
-            println!("{:?} {}", users, user_id)
-        };
-
-
         match db.read(ReadFilter::Id(user_id)) {
             Ok(users) => {
                 if users.is_empty() {
@@ -315,9 +315,40 @@ impl UsersRouter {
         Ok(Response::with((status::Ok, body)))
     }
 
+    /// Get the list of all registered users.
+    /// XXX Once we have a permissions system, this method will require a
+    ///     session token with admin scope.
     pub fn get_all_users(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        let db = UsersDb::new(db_path);
+        match db.read(ReadFilter::All) {
+            Ok(users) => {
+                let users = users.iter().map(
+                    |user| UserBuilder::new()
+                        .id(user.id.unwrap())
+                        .name(user.name.clone())
+                        .email(user.email.clone())
+                        .admin(user.is_admin)
+                        .active(user.is_active)
+                        .finalize().unwrap()
+                ).collect::<Vec<_>>();
+
+                let body_obj = GetAllUsersResponse {
+                    users: users
+                };
+                let body = match json::encode(&body_obj) {
+                    Ok(body) => body,
+                    Err(_) => return EndpointError::with(
+                        status::InternalServerError, 501, None
+                    )
+                };
+                Ok(Response::with((status::Ok, body)))
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
     }
 
     pub fn edit_user(req: &mut Request, db_path: &str)
