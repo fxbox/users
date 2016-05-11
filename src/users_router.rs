@@ -61,6 +61,11 @@ struct CreateUserResponse {
 }
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
+struct GetUserResponse {
+    user: User
+}
+
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 struct GetAllUsersResponse {
     users: Vec<User>
 }
@@ -247,15 +252,16 @@ impl UsersRouter {
         }
     }
 
-    /// Provide the necessary information and a temporary session token to
-    /// complete a user registration.
-    pub fn get_user_activation_info(req: &mut Request, db_path: &str)
+    /// Get the information of the user matching the given id.
+    /// XXX Only the owner or users with admin privileges should be able to
+    ///     access this method. Pending permissions and token scopes system.
+    pub fn get_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
         let user_id = req.extensions.get::<Router>().unwrap()
             .find("id").unwrap_or("").to_owned();
 
         if user_id.is_empty() {
-            return EndpointError::with(status::InternalServerError, 501,
+            return EndpointError::with(status::BadRequest, 400,
                                        Some("Missing user id".to_owned()));
         }
 
@@ -266,8 +272,6 @@ impl UsersRouter {
                 status::BadRequest, 400, Some("Invalid user id".to_owned())
             )
         };
-
-        let user: User;
 
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
@@ -281,38 +285,21 @@ impl UsersRouter {
                         Some("Duplicated user".to_owned()));
                 }
 
-                user = users[0].clone();
-                println!("{:?}", user);
-                if user.is_active {
-                    return EndpointError::with(status::Gone, 410,
-                        Some("User already activated".to_owned()));
-                }
+                let body = match json::encode(&GetUserResponse {
+                    user: users[0].clone(),
+                }) {
+                    Ok(body) => body,
+                    Err(_) => return EndpointError::with(
+                        status::InternalServerError, 501, None
+                    )
+                };
+
+                Ok(Response::with((status::Ok, body)))
             },
             Err(_) => {
-                return EndpointError::with(status::NotFound, 404, None);
+                EndpointError::with(status::NotFound, 404, None)
             }
         }
-
-        // XXX Add short ttl to session token.
-        // XXX Once we have a permissions system we'll need to add a user
-        //     edition scope to the session token.
-        let session_token = match SessionToken::from_user(&user) {
-            Ok(token) => token,
-            Err(_) => return EndpointError::with(
-                status::InternalServerError, 501, None
-            )
-        };
-
-        let body = match json::encode(&SessionTokenResponse {
-            session_token: session_token,
-        }) {
-            Ok(body) => body,
-            Err(_) => return EndpointError::with(
-                status::InternalServerError, 501, None
-            )
-        };
-
-        Ok(Response::with((status::Ok, body)))
     }
 
     /// Get the list of all registered users.
@@ -391,7 +378,7 @@ impl UsersRouter {
         let data = String::from(db_path);
         router.get(format!("/{}/users/:id", API_VERSION),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_user_activation_info(req, &data)
+            UsersRouter::get_user(req, &data)
         });
 
         let data = String::from(db_path);
@@ -442,8 +429,8 @@ describe! users_router_tests {
     before_each {
         use super::API_VERSION;
         #[allow(unused_imports)]
-        use super::super::{ CreateUserResponse, GetAllUsersResponse,
-                            SessionTokenResponse };
+        use super::super::{ CreateUserResponse, GetUserResponse,
+                            GetAllUsersResponse, SessionTokenResponse };
 
         #[allow(unused_imports)]
         use auth_middleware::SessionClaims;
@@ -912,7 +899,7 @@ describe! users_router_tests {
         }
     } // create_user_tests
 
-    describe! get_user_activation_info_tests {
+    describe! get_user_tests {
         before_each {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
@@ -931,27 +918,9 @@ describe! users_router_tests {
             };
         }
 
-        it "should return 410 Gone for already active user id" {
-            let active_user = UserBuilder::new()
-                .name(String::from("username"))
-                .password(String::from("password"))
-                .email(String::from("active_user@example.com"))
-                .active(true)
-                .finalize().unwrap();
-            let user = usersDb.create(&active_user).unwrap();
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
-            match request::get(endpoint, Headers::new(), &router) {
-                Ok(_) => assert!(false),
-                Err(error) => {
-                    let response = error.response;
-                    assert_eq!(response.status.unwrap(), Status::Gone);
-                }
-            };
-        }
-
-        it "should return 200 OK with a session token inactive user id" {
+        it "should return 200 OK with the user information" {
             let inactive_user = UserBuilder::new()
+                .id(1)
                 .name(String::from("username"))
                 .password(String::from("password"))
                 .email(String::from("inactive_user@example.com"))
@@ -963,13 +932,12 @@ describe! users_router_tests {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Ok);
-                    let body_obj = extract_body_to::<SessionTokenResponse>
+                    let body_obj = extract_body_to::<GetUserResponse>
                                    (response).unwrap();
-                    let token = body_obj.session_token;
-                    let claims = jwt::Token::<jwt::Header, SessionClaims>
-                                    ::parse(&token).ok().unwrap().claims;
-                    assert_eq!(claims.id, user.id.unwrap());
-                    assert_eq!(claims.email, user.email);
+                    assert_eq!(body_obj.user.id, inactive_user.id);
+                    assert_eq!(body_obj.user.email, inactive_user.email);
+                    assert_eq!(body_obj.user.is_admin, false);
+                    assert_eq!(body_obj.user.is_active, false);
                 },
                 Err(error) => {
                     println!("{:?}", error);
