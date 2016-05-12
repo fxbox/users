@@ -525,7 +525,73 @@ impl UsersRouter {
 
     pub fn delete_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        // XXX Move this pattern to a macro or helper.
+        let user_id = req.extensions.get::<Router>().unwrap()
+            .find("id").unwrap_or("").to_owned();
+
+        if user_id.is_empty() {
+            return EndpointError::with(status::BadRequest, 400,
+                                       Some("Missing user id".to_owned()));
+        }
+
+        // XXX Move from i32 to string ids
+        let user_id: i32 = match user_id.parse() {
+            Ok(user_id) => user_id,
+            Err(_) => return EndpointError::with(
+                status::BadRequest, 400, Some("Invalid user id".to_owned())
+            )
+        };
+
+        let db = UsersDb::new(db_path);
+        match db.read(ReadFilter::Id(user_id)) {
+            Ok(users) => {
+                if users.len() > 1 {
+                    return EndpointError::with(status::InternalServerError,
+                        501, Some("Duplicated user id".to_owned()))
+                }
+
+                if users.is_empty() {
+                    return EndpointError::with(status::NotFound,
+                        404, Some("User not found".to_owned()))
+                }
+
+                // We don't allow deleting an admin user if it is the only
+                // user registered with admin privileges.
+                if users[0].is_admin {
+                    match db.read(ReadFilter::IsAdmin(true)) {
+                        Ok(users) => {
+                            if users.len() <= 1 {
+                                return EndpointError::with(
+                                    status::Locked, 423,
+                                    Some("Cannot delete admin user".to_owned())
+                                );
+                            }
+                        },
+                        Err(error) => {
+                            println!("{:?}", error);
+                            return from_sqlite_error(error);
+                        }
+                    }
+                }
+
+                if let Some(id) = users[0].id {
+                    match db.delete(id) {
+                        Ok(_) => Ok(Response::with((status::NoContent))),
+                        Err(error) => {
+                            println!("{:?}", error);
+                            from_sqlite_error(error)
+                        }
+                    }
+                } else {
+                    EndpointError::with(status::InternalServerError,
+                        501, Some("Cannot get user id".to_owned()))
+                }
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
     }
 
     /// Creates the Iron user router middleware.
@@ -1173,7 +1239,7 @@ describe! users_router_tests {
         after_each {
             remove_test_db();
         }
-    } // get_user_activation_info_tests
+    } // get_user_tests
 
     describe! get_users_tests {
         before_each {
@@ -1279,7 +1345,7 @@ describe! users_router_tests {
         after_each {
             remove_test_db();
         }
-    } // get_user_activation_info_tests
+    } // get_users_tests
 
     describe! activate_user_tests {
         before_each {
@@ -1419,7 +1485,7 @@ describe! users_router_tests {
         after_each {
             remove_test_db();
         }
-    } // get_user_activation_info_tests
+    } // activate_user_tests
 
     describe! edit_user_tests {
         before_each {
@@ -1577,6 +1643,108 @@ describe! users_router_tests {
         after_each {
             remove_test_db();
         }
-    } // get_user_activation_info_tests
+    } // edit_user_tests
+
+    describe! remove_user_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+            // Admin user.
+            let user = UserBuilder::new(None)
+                       .id(1).name(String::from("admin"))
+                       .password(String::from("password"))
+                       .email(String::from("admin@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.unwrap(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            // With Authorization header.
+            let mut headers = Headers::new();
+            headers.set(Authorization(Bearer { token: signed.to_owned() }));
+        }
+
+        it "should return 401 Unauthorized for invalid auth header" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, 123);
+            match request::delete(endpoint, Headers::new(), &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Unauthorized);
+                }
+            };
+        }
+
+        it "should return 404 NotFound for unknown user id" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, 123);
+            match request::delete(endpoint, headers, &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::NotFound);
+                }
+            };
+        }
+
+        it "should return 423 Locked when trying to remove the last admin" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::delete(endpoint, headers, &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Locked);
+                }
+            };
+        }
+
+        it "should return 204 NoContent when removing the user succeeds" {
+            let user = UserBuilder::new(None)
+                       .id(2)
+                       .name(String::from("username"))
+                       .email(String::from("username@example.com"))
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::delete(endpoint, headers, &router) {
+                Ok(response) => {
+                    assert_eq!(response.status.unwrap(), Status::NoContent);
+                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                        Ok(users) => {
+                            assert!(users.is_empty())
+                        },
+                        Err(_) => assert!(false)
+                    };
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false);
+                }
+            };
+        }
+
+        after_each {
+            remove_test_db();
+        }
+    } // remove_user_tests
 
 } // users_router_tests
