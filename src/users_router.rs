@@ -122,7 +122,7 @@ impl UsersRouter {
             }
         };
 
-        let admin = match UserBuilder::new()
+        let admin = match UserBuilder::new(None)
             .name(body.username)
             .email(body.email)
             .password(body.password)
@@ -218,7 +218,7 @@ impl UsersRouter {
             }
         };
 
-        let user = match UserBuilder::new()
+        let user = match UserBuilder::new(None)
             .email(body.email)
             .finalize() {
                 Ok(user) => user,
@@ -257,6 +257,7 @@ impl UsersRouter {
     ///     access this method. Pending permissions and token scopes system.
     pub fn get_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
+        // XXX Move this pattern to a macro.
         let user_id = req.extensions.get::<Router>().unwrap()
             .find("id").unwrap_or("").to_owned();
 
@@ -305,7 +306,7 @@ impl UsersRouter {
     /// Get the list of all registered users.
     /// XXX Once we have a permissions system, this method will require a
     ///     session token with admin scope.
-    pub fn get_all_users(req: &mut Request, db_path: &str)
+    pub fn get_all_users(_: &mut Request, db_path: &str)
         -> IronResult<Response> {
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::All) {
@@ -313,7 +314,7 @@ impl UsersRouter {
                 // XXX UserBuilder should use Option for several values
                 //     and allow to finalize ignoring certain fields.
                 let users = users.iter().map(
-                    |user| UserBuilder::new()
+                    |user| UserBuilder::new(None)
                         .id(user.id.unwrap())
                         .name(user.name.clone())
                         .email(user.email.clone())
@@ -345,9 +346,89 @@ impl UsersRouter {
         EndpointError::with(status::NotFound, 404, None)
     }
 
+    /// Activate a user by providing a username and a password.
     pub fn activate_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        // XXX Make this pattern a macro.
+        #[derive(RustcDecodable, Debug)]
+        struct ActivateUserBody {
+            username: String,
+            password: String
+        }
+
+        let mut payload = String::new();
+        req.body.read_to_string(&mut payload).unwrap();
+        let body: ActivateUserBody = match json::decode(&payload) {
+            Ok(body) => body,
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
+            }
+        };
+
+        // XXX Move this pattern to a macro or helper.
+        let user_id = req.extensions.get::<Router>().unwrap()
+            .find("id").unwrap_or("").to_owned();
+
+        if user_id.is_empty() {
+            return EndpointError::with(status::BadRequest, 400,
+                                       Some("Missing user id".to_owned()));
+        }
+
+        // XXX Move from i32 to string ids
+        let user_id: i32 = match user_id.parse() {
+            Ok(user_id) => user_id,
+            Err(_) => return EndpointError::with(
+                status::BadRequest, 400, Some("Invalid user id".to_owned())
+            )
+        };
+
+        let db = UsersDb::new(db_path);
+        match db.read(ReadFilter::Id(user_id)) {
+            Ok(users) => {
+                if users.len() > 1 {
+                    return EndpointError::with(status::InternalServerError,
+                        501, Some("Duplicated user id".to_owned()))
+                }
+
+                if users.is_empty() {
+                    return EndpointError::with(status::NotFound,
+                        404, Some("User not found".to_owned()))
+                }
+
+                // If the user is already active, we throw an error.
+                if users[0].is_active {
+                    return EndpointError::with(status::Gone,
+                        409, Some("User is already active".to_owned()))
+                }
+
+                // We build a user from the one obtained from the db and
+                // add the given name and password. UserBuilder takes care
+                // of the validation of these two fields.
+                let user = match UserBuilder::new(Some(users[0].clone()))
+                    .name(body.username)
+                    .password(body.password)
+                    .active(true)
+                    .finalize() {
+                    Ok(user) => user,
+                    Err(user_with_error) => {
+                        println!("{:?}", user_with_error);
+                        return from_user_builder_error(user_with_error.error);
+                    }
+                };
+                match db.update(&user) {
+                    Ok(_) => Ok(Response::with((status::NoContent))),
+                    Err(error) => {
+                        println!("{:?}", error);
+                        from_sqlite_error(error)
+                    }
+                }
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
     }
 
     pub fn delete_user(req: &mut Request, db_path: &str)
@@ -583,7 +664,7 @@ describe! users_router_tests {
 
         it "should respond 410 Gone if an admin account exists" {
             // Be sure we have an admin
-            usersDb.create(&UserBuilder::new()
+            usersDb.create(&UserBuilder::new(None)
                        .id(1).name(String::from("admin"))
                        .password(String::from("password!!"))
                        .email(String::from("admin@example.com"))
@@ -678,7 +759,7 @@ describe! users_router_tests {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
             // Create active user.
-            usersDb.create(&UserBuilder::new()
+            usersDb.create(&UserBuilder::new(None)
                        .id(1).name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
@@ -686,7 +767,7 @@ describe! users_router_tests {
                        .active(true)
                        .finalize().unwrap()).ok();
             // Create inactive user.
-            usersDb.create(&UserBuilder::new()
+            usersDb.create(&UserBuilder::new(None)
                        .id(2).name(String::from("inactive_user"))
                        .password(String::from("password"))
                        .email(String::from("inactive_user@example.com"))
@@ -818,7 +899,7 @@ describe! users_router_tests {
         before_each {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
-            let user = UserBuilder::new()
+            let user = UserBuilder::new(None)
                        .id(1).name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
@@ -870,7 +951,7 @@ describe! users_router_tests {
                     let json = extract_body_to::<ErrorBody>(response).unwrap();
                     assert_eq!(json.errno, 101);
                 }
-            }
+            };
         }
 
         it "should allow the creation of a new user" {
@@ -897,10 +978,10 @@ describe! users_router_tests {
                     println!("{:?}", error);
                     assert!(false);
                 }
-              }
+            };
         }
 
-        after {
+        after_each {
             remove_test_db();
         }
     } // create_user_tests
@@ -910,7 +991,7 @@ describe! users_router_tests {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
             // Admin user.
-            let user = UserBuilder::new()
+            let user = UserBuilder::new(None)
                        .id(1).name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
@@ -950,7 +1031,7 @@ describe! users_router_tests {
 
         it "should not allow getting user info to non authenticated
             requests" {
-            let inactive_user = UserBuilder::new()
+            let inactive_user = UserBuilder::new(None)
                 .id(1)
                 .name(String::from("username"))
                 .password(String::from("password"))
@@ -970,7 +1051,7 @@ describe! users_router_tests {
         }
 
         it "should return 200 OK with the user information" {
-            let inactive_user = UserBuilder::new()
+            let inactive_user = UserBuilder::new(None)
                 .id(1)
                 .name(String::from("username"))
                 .password(String::from("password"))
@@ -1007,7 +1088,7 @@ describe! users_router_tests {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
             // Admin user.
-            let user = UserBuilder::new()
+            let user = UserBuilder::new(None)
                        .id(1).name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
@@ -1069,7 +1150,7 @@ describe! users_router_tests {
         }
 
         it "should return 200 OK with a list of two users" {
-            usersDb.create(&UserBuilder::new()
+            usersDb.create(&UserBuilder::new(None)
                        .id(2).name(String::from("inactive_user"))
                        .password(String::from("password"))
                        .email(String::from("inactive_user@example.com"))
@@ -1099,6 +1180,146 @@ describe! users_router_tests {
                 Err(error) => {
                     println!("{:?}", error);
                     assert!(false)
+                }
+            };
+        }
+
+        after_each {
+            remove_test_db();
+        }
+    } // get_user_activation_info_tests
+
+    describe! activate_user_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+        }
+
+        it "should return 400 BadRequest errno 100 if username is missing" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, 123);
+            match request::put(endpoint, Headers::new(),
+                               "{\"password\": \"12345678\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 100);
+                }
+            };
+        }
+
+        it "should return 400 BadRequest errno 102 if password is missing" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, 123);
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 102);
+                }
+            };
+        }
+
+        it "should return 404 NotFound for unknown user id" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, 123);
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\",
+                                 \"password\": \"12345678\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::NotFound);
+                }
+            };
+        }
+
+        it "should return 400 BadRequest errno 102 if password is too short" {
+            let user = UserBuilder::new(None)
+                       .id(1)
+                       .email(String::from("username@example.com"))
+                       .active(false)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, user.id.unwrap());
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\",
+                                 \"password\": \"123\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 102);
+                }
+            };
+        }
+
+        it "should return 409 Gone if user is already active" {
+            let user = UserBuilder::new(None)
+                       .id(1)
+                       .email(String::from("username@example.com"))
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, user.id.unwrap());
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\",
+                                 \"password\": \"12345678\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Gone);
+                }
+            };
+        }
+
+        it "should return 204 NoContent activating a inactive user" {
+            let user = UserBuilder::new(None)
+                       .id(1)
+                       .email(String::from("username@example.com"))
+                       .active(false)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
+                                    API_VERSION, user.id.unwrap());
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\",
+                                 \"password\": \"12345678\"}",
+                               &router) {
+                Ok(response) => {
+                    assert_eq!(response.status.unwrap(), Status::NoContent);
+                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                        Ok(users) => {
+                            assert_eq!(users[0].name, "username".to_owned());
+                            assert_eq!(users[0].is_active, true);
+                        },
+                        Err(_) => assert!(false)
+                    };
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false);
                 }
             };
         }

@@ -135,31 +135,14 @@ impl<H: Handler> Handler for AuthHandler<H> {
 
         // Otherwise, we need to verify the authorization token that can
         // come within the Authorization header or as a query parameter.
-        match req.headers.clone().get::<headers::Authorization<headers::Bearer>>() {
-            Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                if let Err(_) = AuthMiddleware::verify(token,
+        match AuthMiddleware::get_session_token(req) {
+            Some(token) => {
+                if let Err(_) = AuthMiddleware::verify(&token,
                                                        &self.auth_db_file) {
                     return EndpointError::with(status::Unauthorized, 401, None)
                 }
             },
-            _ => {
-                match req.get_ref::<UrlEncodedQuery>() {
-                    Ok(ref params) => {
-                        match params.get("auth") {
-                            Some(token) => {
-                                if let Err(_) = AuthMiddleware::verify(&token[0],
-                                                                       &self.auth_db_file) {
-                                    return EndpointError::with(status::Unauthorized, 401, None)
-                                }
-                            },
-                            _ => {
-                                return EndpointError::with(status::Unauthorized, 401, None)
-                            }
-                        }
-                    },
-                    _ => return EndpointError::with(status::Unauthorized, 401, None)
-                }
-            }
+            None => return EndpointError::with(status::Unauthorized, 401, None)
         };
 
         self.handler.handle(req)
@@ -256,6 +239,29 @@ impl AuthMiddleware {
 
         Ok(())
     }
+
+    /// Extract the session token string from the Authorization header.
+    pub fn get_session_token(req: &mut Request) -> Option<String> {
+        match req.headers.clone()
+                 .get::<headers::Authorization<headers::Bearer>>() {
+            Some(&headers::Authorization(headers::Bearer { ref token })) => {
+                Some(token.clone())
+            },
+            _ => {
+                match req.get_ref::<UrlEncodedQuery>() {
+                    Ok(ref params) => {
+                        match params.get("auth") {
+                            Some(token) => {
+                                Some(token[0].clone())
+                            },
+                            _ => None
+                        }
+                    },
+                    _ => None
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -339,7 +345,7 @@ describe! auth_middleware_tests {
 
         let db = manager.get_db();
         db.clear().ok();
-        let user = UserBuilder::new()
+        let user = UserBuilder::new(None)
             .id(1).name(String::from("username"))
             .password(String::from("password"))
             .email(String::from("username@example.com"))

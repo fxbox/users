@@ -18,7 +18,7 @@
 //! use foxbox_users::UserBuilder;
 //!
 //! let new_user =
-//!     UserBuilder::new()
+//!     UserBuilder::new(None)
 //!     .name(String::from("Miles"))                  // optional, not empty
 //!     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, unique, not empty
 //!     .password(String::from("s800t101"))           // optional, at least 8 characters
@@ -50,12 +50,12 @@ pub struct User {
 
 /// Creates instances of `User`.
 ///
-/// Starting with `UserBuilder::new()` and chaining methods you can create users:
+/// Starting with `UserBuilder::new(None)` and chaining methods you can create users:
 ///
 /// ```
 /// # use foxbox_users::UserBuilder;
 /// let new_user =
-///     UserBuilder::new()
+///     UserBuilder::new(None)
 ///     .name(String::from("Miles"))                  // optional, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, unique, not empty
 ///     .password(String::from("s800t101"))           // optional, at least 8 characters
@@ -71,7 +71,7 @@ pub struct User {
 ///
 /// ```
 /// # use foxbox_users::{UserBuilder, UserBuilderError};
-/// let failing_user = UserBuilder::new()
+/// let failing_user = UserBuilder::new(None)
 ///                    .name(String::from("Miles"))
 ///                    .email(String::from("mbdyson@cyberdyne.com"))
 ///                    .password(String::from("short"))
@@ -87,7 +87,7 @@ pub struct User {
 /// ```
 /// # use foxbox_users::UserBuilder;
 /// let new_user =
-///     UserBuilder::new()
+///     UserBuilder::new(None)
 ///     .name(String::from("Miles"))                  // optional, not empty
 ///     .email(String::from("mbdyson@cyberdyne.com")) // mandatory, not empty
 ///     .password(String::from("s800t101"))           // optional, at least 8 characters
@@ -132,17 +132,30 @@ fn escape(string: &str) -> String {
 impl UserBuilder {
     const MIN_PASS_LEN: usize = 8;
 
-    pub fn new() -> UserBuilder {
-        UserBuilder {
-            id: None,
-            name: String::new(),
-            email: String::new(),
-            password: String::new(),
-            secret: String::new(),
-            error: None,
-            is_admin: false,
-            is_active: false
+    pub fn new(user: Option<User>) -> UserBuilder {
+        match user {
+            Some(user) =>   UserBuilder {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                password: user.password,
+                secret: user.secret,
+                error: None,
+                is_admin: user.is_admin,
+                is_active: user.is_active
+            },
+            None => UserBuilder {
+                id: None,
+                name: String::new(),
+                email: String::new(),
+                password: String::new(),
+                secret: String::new(),
+                error: None,
+                is_admin: false,
+                is_active: false
+            }
         }
+
     }
 
     pub fn id(mut self, id: i32) -> Self {
@@ -294,7 +307,7 @@ impl UsersDb {
     /// # use foxbox_users::{UsersManager, UserBuilder, ReadFilter};
     /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
     /// let db = manager.get_db();
-    /// # db.create(&UserBuilder::new().name(String::from("John Doe")).finalize().unwrap());
+    /// # db.create(&UserBuilder::new(None).name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
     /// let users = db.read(ReadFilter::All).unwrap();
     /// assert!(users.is_empty());
@@ -313,7 +326,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{UsersManager, UserBuilder};
-    /// let admin = UserBuilder::new().name(String::from("admin")).admin(true).finalize().unwrap();
+    /// let admin = UserBuilder::new(None).name(String::from("admin")).admin(true).finalize().unwrap();
     /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
     /// let db = manager.get_db();
     /// assert!(db.create(&admin).is_ok());
@@ -419,12 +432,12 @@ impl UsersDb {
     }
 
     /// Replaces a pre-existent user, identified by its database id.
-    pub fn update(&self, id: i32, user: &User) -> rusqlite::Result<c_int> {
+    pub fn update(&self, user: &User) -> rusqlite::Result<c_int> {
         self.connection.execute("UPDATE users
             SET name=$1, email=$2, password=$3, secret=$4, is_admin=$5, is_active=$6
             WHERE id=$7",
             &[&user.name, &user.email, &user.password, &user.secret,
-              &user.is_admin, &user.is_active, &id])
+              &user.is_admin, &user.is_active, &user.id])
     }
 
     /// Removes a user identified by its id.
@@ -438,7 +451,7 @@ describe! user_builder_tests {
     it "should build a user correctly - default values" {
         use pwhash::bcrypt;
 
-        let user = UserBuilder::new()
+        let user = UserBuilder::new(None)
             .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
@@ -459,7 +472,7 @@ describe! user_builder_tests {
     it "should build a user correctly - custom is_admin and is_active values" {
         use pwhash::bcrypt;
 
-        let user = UserBuilder::new()
+        let user = UserBuilder::new(None)
             .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
@@ -482,7 +495,7 @@ describe! user_builder_tests {
     it "should provide a secret even if not explicitly set" {
         use pwhash::bcrypt;
 
-        let user = UserBuilder::new()
+        let user = UserBuilder::new(None)
             .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
@@ -498,7 +511,7 @@ describe! user_builder_tests {
     }
 
     failing "should panic if invalid user" {
-        let _user = UserBuilder::new()
+        let _user = UserBuilder::new(None)
             .name(String::from(""))
             .finalize()
             .unwrap();
@@ -524,19 +537,19 @@ describe! user_db_tests {
         usersDb.clear().ok();
 
         let defaultUsers = vec![
-            UserBuilder::new()
+            UserBuilder::new(None)
                 .id(1).name(String::from("User1"))
                 .email(String::from("user1@mozilla.org"))
                 .password(String::from("password1"))
                 .secret(String::from("secret1"))
                 .finalize().unwrap(),
-            UserBuilder::new()
+            UserBuilder::new(None)
                 .id(2).name(String::from("User2"))
                 .email(String::from("user2@mozilla.org"))
                 .password(String::from("password2"))
                 .secret(String::from("secret2"))
                 .finalize().unwrap(),
-            UserBuilder::new()
+            UserBuilder::new(None)
                 .id(3).name(String::from("User3"))
                 .email(String::from("user3@mozilla.org"))
                 .password(String::from("password3"))
@@ -628,7 +641,7 @@ describe! user_db_tests {
         let mut user = defaultUsers[0].clone();
         user.name = "New Name".to_owned();
 
-        usersDb.update(user.id.unwrap(), &user).unwrap();
+        usersDb.update(&user).unwrap();
 
         let users = usersDb.read(ReadFilter::All).unwrap();
 
@@ -663,7 +676,7 @@ describe! user_db_tests {
     }
 
     it "should create admin user when requested" {
-        let admin = UserBuilder::new().name(String::from("Admin"))
+        let admin = UserBuilder::new(None).name(String::from("Admin"))
                 .email(String::from("admin@mozilla.org"))
                 .password(String::from("password!"))
                 .admin(true)

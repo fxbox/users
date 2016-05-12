@@ -87,7 +87,7 @@ The currently-defined error responses are:
     * [GET /users](#get-users) :lock:
     * [GET /users/:id](#get-usersid) :lock:
     * [PUT /users/:id](#put-usersid) :lock:
-    * [PUT /users/:id/activate](#put-usersid-activate)
+    * [PUT /users/:id/activate](#put-usersidactivate)
     * [DELETE /users/:id](#delete-usersid) :lock:
 
 ## POST /setup
