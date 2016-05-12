@@ -341,9 +341,101 @@ impl UsersRouter {
         }
     }
 
+    /// Edit the information of the user matching the given id.
+    /// XXX Once we have a permission system this method should
+    ///     request a admin scope or check that the user is the
+    ///     one editing its own information.
     pub fn edit_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        EndpointError::with(status::NotFound, 404, None)
+        // XXX Make this pattern a macro.
+        #[derive(RustcDecodable, Debug)]
+        struct EditUserBody {
+            username: Option<String>,
+            password: Option<String>,
+            // XXX only admin users should be able to change this value.
+            is_admin: Option<bool>
+        }
+
+        let mut payload = String::new();
+        req.body.read_to_string(&mut payload).unwrap();
+        let body: EditUserBody = match json::decode(&payload) {
+            Ok(body) => body,
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
+            }
+        };
+
+        // XXX Move this pattern to a macro or helper.
+        let user_id = req.extensions.get::<Router>().unwrap()
+            .find("id").unwrap_or("").to_owned();
+
+        if user_id.is_empty() {
+            return EndpointError::with(status::BadRequest, 400,
+                                       Some("Missing user id".to_owned()));
+        }
+
+        // XXX Move from i32 to string ids
+        let user_id: i32 = match user_id.parse() {
+            Ok(user_id) => user_id,
+            Err(_) => return EndpointError::with(
+                status::BadRequest, 400, Some("Invalid user id".to_owned())
+            )
+        };
+
+        let db = UsersDb::new(db_path);
+        match db.read(ReadFilter::Id(user_id)) {
+            Ok(users) => {
+                if users.len() > 1 {
+                    return EndpointError::with(status::InternalServerError,
+                        501, Some("Duplicated user id".to_owned()))
+                }
+
+                if users.is_empty() {
+                    return EndpointError::with(status::NotFound,
+                        404, Some("User not found".to_owned()))
+                }
+
+                // If the user is not active, we throw an error.
+                if !(users[0].is_active) {
+                    return EndpointError::with(status::PreconditionFailed,
+                        412, Some("User is not active".to_owned()))
+                }
+
+                // We build a user from the one obtained from the db and
+                // add the given name, password and is_admin values.
+                // UserBuilder takes care of the validation of these two
+                // fields.
+                let mut user = UserBuilder::new(Some(users[0].clone()));
+                if let Some(name) = body.username {
+                    user = user.name(name);
+                }
+                if let Some(password) = body.password {
+                    user = user.password(password);
+                }
+                if let Some(is_admin) = body.is_admin {
+                    user = user.admin(is_admin);
+                }
+                let user = match user.finalize() {
+                    Ok(user) => user,
+                    Err(user_with_error) => {
+                        println!("{:?}", user_with_error);
+                        return from_user_builder_error(user_with_error.error);
+                    }
+                };
+                match db.update(&user) {
+                    Ok(_) => Ok(Response::with((status::NoContent))),
+                    Err(error) => {
+                        println!("{:?}", error);
+                        from_sqlite_error(error)
+                    }
+                }
+            },
+            Err(error) => {
+                println!("{:?}", error);
+                from_sqlite_error(error)
+            }
+        }
     }
 
     /// Activate a user by providing a username and a password.
@@ -1313,6 +1405,164 @@ describe! users_router_tests {
                         Ok(users) => {
                             assert_eq!(users[0].name, "username".to_owned());
                             assert_eq!(users[0].is_active, true);
+                        },
+                        Err(_) => assert!(false)
+                    };
+                },
+                Err(error) => {
+                    println!("{:?}", error);
+                    assert!(false);
+                }
+            };
+        }
+
+        after_each {
+            remove_test_db();
+        }
+    } // get_user_activation_info_tests
+
+    describe! edit_user_tests {
+        before_each {
+            let usersDb = manager.get_db();
+            usersDb.clear().ok();
+            // Admin user.
+            let user = UserBuilder::new(None)
+                       .id(1).name(String::from("admin"))
+                       .password(String::from("password"))
+                       .email(String::from("admin@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.unwrap(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            // With Authorization header.
+            let mut headers = Headers::new();
+            headers.set(Authorization(Bearer { token: signed.to_owned() }));
+        }
+
+        it "should return 401 Unauthorized for invalid auth header" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, 123);
+            match request::put(endpoint, Headers::new(),
+                               "{\"username\": \"username\",
+                                 \"password\": \"12345678\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::Unauthorized);
+                }
+            };
+        }
+
+        it "should return 404 NotFound for unknown user id" {
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, 123);
+            match request::put(endpoint, headers,
+                               "{\"username\": \"username\",
+                                 \"password\": \"12345678\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::NotFound);
+                }
+            };
+        }
+
+        it "should return 412 PreconditionFailed if user is not active" {
+            let user = UserBuilder::new(None)
+                       .id(2)
+                       .name(String::from("username"))
+                       .email(String::from("username@example.com"))
+                       .active(false)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            println!("endpoint {}", endpoint);
+
+            if let Ok(users) = usersDb.read(ReadFilter::All) {
+                println!("{:?}", users);
+            };
+            match request::put(endpoint, headers,
+                               "{\"username\": \"manolo\",
+                                 \"password\": \"12345678\",
+                                 \"is_admin\": true}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(),
+                               Status::PreconditionFailed);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 412);
+                }
+            };
+        }
+
+        it "should return 400 BadRequest errno 102 if password is too short" {
+            let user = UserBuilder::new(None)
+                       .id(1)
+                       .email(String::from("username@example.com"))
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::put(endpoint, headers,
+                               "{\"username\": \"username\",
+                                 \"password\": \"123\"}",
+                               &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 102);
+                }
+            };
+        }
+
+        it "should return 204 NoContent when editting the user succeeds" {
+            let user = UserBuilder::new(None)
+                       .id(1)
+                       .name(String::from("username"))
+                       .email(String::from("username@example.com"))
+                       .active(true)
+                       .finalize().unwrap();
+            usersDb.create(&user).ok();
+
+            let endpoint = &format!("http://localhost:3000/{}/users/{}",
+                                    API_VERSION, user.id.unwrap());
+            match request::put(endpoint, headers,
+                               "{\"username\": \"manolo\",
+                                 \"password\": \"12345678\",
+                                 \"is_admin\": true}",
+                               &router) {
+                Ok(response) => {
+                    assert_eq!(response.status.unwrap(), Status::NoContent);
+                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                        Ok(users) => {
+                            assert_eq!(users[0].name, "manolo".to_owned());
+                            assert_eq!(users[0].is_admin, true);
                         },
                         Err(_) => assert!(false)
                     };

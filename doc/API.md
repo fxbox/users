@@ -163,7 +163,7 @@ Create a new inactive user registration and sends an activation email to the use
 Only users with admin privileges are able to access this method.
 
 ### Request
-Requests must include an authorization token containing a [bearer token](#authentication).
+Requests must include an authorization header containing a [bearer token](#authentication).
 
 ___Parameters___
 * email - User email.
@@ -198,7 +198,7 @@ Get the list of all registered users.
 Only users with admin privileges are able to access this method.
 
 ### Request
-Requests must include an authorization token containing a [bearer token](#authentication).
+Requests must include an authorization header containing a [bearer token](#authentication).
 ```ssh
 GET /users HTTP/1.1
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
@@ -268,7 +268,7 @@ Edit the information of the user matching the given id.
 Users with non admin privileges are only able to edit their own information.
 
 ### Request
-Requests must include an authorization token containing a [bearer token](#authentication).
+Requests must include an authorization header containing a [bearer token](#authentication).
 
 ___Parameters___
 * id - User id.
@@ -281,7 +281,6 @@ PUT /users/:id HTTP/1.1
 Content-Type: application/json
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 {
-  "id": "1231231312",
   "username": "pepe",
   "password": "whatever",
   "is_admin": false
@@ -349,7 +348,7 @@ Delete the user matching the given id.
 Only users with admin privileges are able to access this method.
 
 ### Request
-Requests must include an authorization token containing a [bearer token](#authentication).
+Requests must include an authorization header containing a [bearer token](#authentication).
 ```ssh
 DELETE /users/:id HTTP/1.1
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
