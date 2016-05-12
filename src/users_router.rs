@@ -29,6 +29,7 @@ type Credentials = (String, String);
 
 pub static API_VERSION: &'static str = "v1";
 
+/// Body response for POST /setup and POST /login
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct SessionTokenResponse {
     session_token: String
@@ -55,16 +56,19 @@ impl SessionTokenResponse {
     }
 }
 
+/// Body response for POST /users
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct CreateUserResponse {
     activation_url: String
 }
 
+/// Body response for GET /users/:id
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct GetUserResponse {
     user: User
 }
 
+/// Body response for GET /users
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct GetAllUsersResponse {
     users: Vec<User>
@@ -82,7 +86,7 @@ struct GetAllUsersResponse {
 ///
 /// fn main() {
 ///     use foxbox_users::UsersManager;
-///     use iron::prelude::{Chain, Iron};
+///     use iron::prelude::{ Chain, Iron };
 ///
 ///     let manager = UsersManager::new("UsersRouter_0.sqlite");
 ///     let router = manager.get_router_chain();
@@ -95,6 +99,8 @@ struct GetAllUsersResponse {
 pub struct UsersRouter;
 
 impl UsersRouter {
+    /// POST /setup handler.
+    /// Allow to initiate the box by registering an admin user.
     fn setup(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
@@ -147,6 +153,8 @@ impl UsersRouter {
         }
     }
 
+    /// POST /login handler.
+    /// Allow users to authenticate with the box.
     fn login(req: &mut Request, db_path: &str) -> IronResult<Response> {
         // Return Some pair of valid credentials if both email and password
         // are provided or None elsewhere.
@@ -196,6 +204,7 @@ impl UsersRouter {
         }
     }
 
+    /// POST /users handler.
     /// Create a new user registration. By default the user is added to the DB
     /// but it remains inactive until the owner sets a user name and a password.
     ///
@@ -234,6 +243,10 @@ impl UsersRouter {
                 let activation_url = format!("/{}/users/{}", API_VERSION,
                                              user.id.unwrap());
 
+                // XXX For now we simply log the activation url. We need to
+                // send it over email.
+                println!("New user: activation url {}", activation_url);
+
                 let body = match json::encode(&CreateUserResponse{
                     activation_url: activation_url
                 }) {
@@ -252,6 +265,7 @@ impl UsersRouter {
         }
     }
 
+    /// GET /user/:id handler.
     /// Get the information of the user matching the given id.
     /// XXX Only the owner or users with admin privileges should be able to
     ///     access this method. Pending permissions and token scopes system.
@@ -303,6 +317,7 @@ impl UsersRouter {
         }
     }
 
+    /// GET /users handler.
     /// Get the list of all registered users.
     /// XXX Once we have a permissions system, this method will require a
     ///     session token with admin scope.
@@ -341,6 +356,7 @@ impl UsersRouter {
         }
     }
 
+    /// PUT /users/:id handler.
     /// Edit the information of the user matching the given id.
     /// XXX Once we have a permission system this method should
     ///     request a admin scope or check that the user is the
@@ -438,6 +454,7 @@ impl UsersRouter {
         }
     }
 
+    /// PUT /users/:id/activate handler.
     /// Activate a user by providing a username and a password.
     pub fn activate_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
@@ -523,6 +540,10 @@ impl UsersRouter {
         }
     }
 
+    /// DELETE /users/:id handler.
+    /// Delete the user matching the given id.
+    /// XXX Once we have a permission system this method should
+    ///     request a admin scope.
     pub fn delete_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
         // XXX Move this pattern to a macro or helper.

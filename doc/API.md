@@ -73,6 +73,7 @@ The currently-defined error responses are:
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 * status code 409, errno 409: Conflict. The user is already registered.
 * status code 410, errno 410: Gone. The resource is no more available. Don't insist.
+* status code 423, errno 423: Locked. You are trying to delete the last user with admin privileges. That's forbidden.
 * status code 501, errno 501: Internal server error.
 * any status code, errno 999: Unknown error
 
@@ -360,3 +361,8 @@ Successful requests will produce a "204 No Content":
 HTTP/1.1 204 No Content
 Connection: close
 ```
+
+Failing requests may be due to the following errors:
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
+* status code 404, errno 404: Not Found. The user does not exist.
+* status code 423, errno 423: Locked. You are trying to delete the last user with admin privileges. That's forbidden.
