@@ -26,12 +26,12 @@ use urlencoded::UrlEncodedQuery;
 
 /// Structure representing [JWT claims section](https://jwt.io/introduction/).
 ///
-/// Claims made by the authentication protocol includes `id` and `name` with
-/// database unique id and username respectively.
+/// Claims made by the authentication protocol includes `id` and `email` with
+/// database unique id and email respectively.
 #[derive(Default, RustcDecodable, RustcEncodable)]
 pub struct SessionClaims{
     pub id: i32,
-    pub name: String
+    pub email: String
 }
 
 /// Factory to create a session token `String` for a user in the database.
@@ -42,7 +42,7 @@ impl SessionToken {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned()
+            email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         token.signed(
@@ -59,14 +59,14 @@ impl SessionToken {
 
 /// Represents an authenticated endpoint.
 ///
-/// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
+/// When initializing [`AuthMiddleware`](./struct.AuthMiddleware.html) you need to
 /// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
 ///
 /// `AuthEndpoints` take a vector of methods and a string representing the path
 /// of the endpoint to be authenticated. This path can contain wildcard
 /// parts. For example:
 ///
-/// AuthEndpoint(vec![Method::Get, Method::Post], "/a/path/:foo/bar/:baz")
+/// `AuthEndpoint`(vec![`Method::Get`, `Method::Post`], "/a/path/:foo/bar/:baz")
 ///
 /// would match with a GET or POST request to /a/path/whatever/bar/whatever
 #[derive(Debug, Clone)]
@@ -135,31 +135,14 @@ impl<H: Handler> Handler for AuthHandler<H> {
 
         // Otherwise, we need to verify the authorization token that can
         // come within the Authorization header or as a query parameter.
-        match req.headers.clone().get::<headers::Authorization<headers::Bearer>>() {
-            Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                if let Err(_) = AuthMiddleware::verify(token,
+        match AuthMiddleware::get_session_token(req) {
+            Some(token) => {
+                if let Err(_) = AuthMiddleware::verify(&token,
                                                        &self.auth_db_file) {
                     return EndpointError::with(status::Unauthorized, 401, None)
                 }
             },
-            _ => {
-                match req.get_ref::<UrlEncodedQuery>() {
-                    Ok(ref params) => {
-                        match params.get("auth") {
-                            Some(token) => {
-                                if let Err(_) = AuthMiddleware::verify(&token[0],
-                                                                       &self.auth_db_file) {
-                                    return EndpointError::with(status::Unauthorized, 401, None)
-                                }
-                            },
-                            _ => {
-                                return EndpointError::with(status::Unauthorized, 401, None)
-                            }
-                        }
-                    },
-                    _ => return EndpointError::with(status::Unauthorized, 401, None)
-                }
-            }
+            None => return EndpointError::with(status::Unauthorized, 401, None)
         };
 
         self.handler.handle(req)
@@ -256,6 +239,45 @@ impl AuthMiddleware {
 
         Ok(())
     }
+
+    /// Extract the session token string from the Authorization header or
+    /// the url query parameters.
+    pub fn get_session_token(req: &mut Request) -> Option<String> {
+        match req.headers.clone()
+                 .get::<headers::Authorization<headers::Bearer>>() {
+            Some(&headers::Authorization(headers::Bearer { ref token })) => {
+                Some(token.clone())
+            },
+            _ => {
+                match req.get_ref::<UrlEncodedQuery>() {
+                    Ok(ref params) => {
+                        match params.get("auth") {
+                            Some(token) => {
+                                Some(token[0].clone())
+                            },
+                            _ => None
+                        }
+                    },
+                    _ => None
+                }
+            }
+        }
+    }
+
+    /// Extract the user id from the Authorization header or the url query
+    /// parametes.
+    pub fn get_user_id(req: &mut Request) -> Option<i32> {
+        match AuthMiddleware::get_session_token(req) {
+            Some(token) => {
+                let token = match SessionToken::from_string(&token) {
+                    Ok(token) => token,
+                    Err(_) => return None
+                };
+                Some(token.claims.id)
+            },
+            None => None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -339,7 +361,7 @@ describe! auth_middleware_tests {
 
         let db = manager.get_db();
         db.clear().ok();
-        let user = UserBuilder::new()
+        let user = UserBuilder::new(None)
             .id(1).name(String::from("username"))
             .password(String::from("password"))
             .email(String::from("username@example.com"))
@@ -349,7 +371,7 @@ describe! auth_middleware_tests {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.unwrap(),
-            name: user.name.to_owned()
+            email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
         let signed = token.signed(

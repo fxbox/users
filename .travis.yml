@@ -1,5 +1,5 @@
 language: rust
 rust:
-    - nightly-2016-03-07
+    - nightly-2016-05-07
 script:
     - RUST_BACKTRACE=1 cargo test
