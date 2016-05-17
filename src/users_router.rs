@@ -28,6 +28,9 @@ use std::io::Read;
 type Credentials = (String, String);
 
 pub static API_VERSION: &'static str = "v1";
+pub fn endpoint(path: &str) -> String {
+    format!("/{}{}", API_VERSION, path)
+}
 
 /// Body response for POST /setup and POST /login
 #[derive(Debug, RustcDecodable, RustcEncodable)]
@@ -240,8 +243,9 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         match db.create(&user) {
             Ok(user) => {
-                let activation_url = format!("/{}/users/{}", API_VERSION,
-                                             user.id.unwrap());
+                let activation_url = endpoint(
+                    &format!("/users/{}",user.id.unwrap())
+                );
 
                 // XXX For now we simply log the activation url. We need to
                 // send it over email.
@@ -621,65 +625,65 @@ impl UsersRouter {
 
         // Setup.
         let data = String::from(db_path);
-        router.post(format!("/{}/setup", API_VERSION),
+        router.post(endpoint("/setup"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::setup(req, &data)
         });
 
         // Login.
         let data = String::from(db_path);
-        router.post(format!("/{}/login", API_VERSION),
+        router.post(endpoint("/login"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::login(req, &data)
         });
 
         // User management.
         let data = String::from(db_path);
-        router.post(format!("/{}/users", API_VERSION),
+        router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::create_user(req, &data)
         });
 
         let data = String::from(db_path);
-        router.get(format!("/{}/users/:id", API_VERSION),
+        router.get(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::get_user(req, &data)
         });
 
         let data = String::from(db_path);
-        router.get(format!("/{}/users", API_VERSION),
+        router.get(endpoint("/users"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::get_all_users(req, &data)
         });
 
         let data = String::from(db_path);
-        router.put(format!("/{}/users/:id", API_VERSION),
+        router.put(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::edit_user(req, &data)
         });
 
         let data = String::from(db_path);
-        router.put(format!("/{}/users/:id/activate", API_VERSION),
+        router.put(endpoint("/users/:id/activate"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::activate_user(req, &data)
         });
 
         let data = String::from(db_path);
-        router.delete(format!("/{}/users/:id", API_VERSION),
+        router.delete(endpoint("/users/:id"),
                       move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::delete_user(req, &data)
         });
 
         let cors = CORS::new(vec![
-            (vec![Method::Post], format!("/{}/login", API_VERSION))
+            (vec![Method::Post], endpoint("/login"))
         ]);
 
         let data = String::from(db_path);
         let auth_middleware = AuthMiddleware::new(vec![
             AuthEndpoint(vec![Method::Post, Method::Get],
-                         format!("/{}/users", API_VERSION)),
+                         endpoint("/users")),
             AuthEndpoint(vec![Method::Get, Method::Put, Method::Delete],
-                         format!("/{}/users/:id", API_VERSION))
+                         endpoint("/users/:id"))
         ], data);
 
         let mut chain = Chain::new(router);
@@ -693,7 +697,6 @@ impl UsersRouter {
 #[cfg(test)]
 describe! users_router_tests {
     before_each {
-        use super::API_VERSION;
         #[allow(unused_imports)]
         use super::super::{ CreateUserResponse, GetUserResponse,
                             GetAllUsersResponse, SessionTokenResponse };
@@ -735,6 +738,7 @@ describe! users_router_tests {
 
     describe! cors_tests {
         it "should get the appropriate CORS headers" {
+            use super::API_VERSION;
             use iron::method::Method;
 
             let endpoints = vec![
@@ -759,8 +763,8 @@ describe! users_router_tests {
         }
 
         it "should get the appropriate CORS headers even in case of error" {
-            match request::post(&format!("http://localhost:3000/{}/login",
-                                         API_VERSION),
+            match request::post(&format!("http://localhost:3000{}",
+                                         &endpoint("/login")),
                                 Headers::new(),
                                 "{}",
                                 &router) {
@@ -778,8 +782,8 @@ describe! users_router_tests {
         }
 
         it "should not get CORS headers" {
-            match request::options(&format!("http://localhost:3000/{}/setup",
-                                            API_VERSION),
+            match request::options(&format!("http://localhost:3000{}",
+                                            &endpoint("/setup")),
                                    Headers::new(),
                                    &router) {
                 Ok(res) => {
@@ -800,8 +804,8 @@ describe! users_router_tests {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/setup",
-                                    API_VERSION);
+            let endpoint = &format!("http://localhost:3000{}",
+                                    &endpoint("/setup"));
         }
 
         it "should respond 201 Created for a proper POST /setup" {
@@ -953,8 +957,8 @@ describe! users_router_tests {
                        .secret(String::from("secret"))
                        .active(false)
                        .finalize().unwrap()).ok();
-            let endpoint = &format!("http://localhost:3000/{}/login",
-                                    API_VERSION);
+            let endpoint = &format!("http://localhost:3000{}",
+                                    endpoint("/login"));
         }
 
         it "should respond with a generic 400 Bad Request for requests missing
@@ -1087,8 +1091,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let create_user_endpoint = &format!("http://localhost:3000/{}/users",
-                                                API_VERSION);
+            let create_user_endpoint = &format!("http://localhost:3000{}",
+                                                endpoint("/users"));
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
@@ -1197,8 +1201,8 @@ describe! users_router_tests {
 
         it "should return 404 NotFound for unknown user id" {
             let unknown_id = 111;
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, unknown_id);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}", unknown_id)));
             match request::get(endpoint, headers, &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1217,8 +1221,8 @@ describe! users_router_tests {
                 .email(String::from("inactive_user@example.com"))
                 .finalize().unwrap();
             let user = usersDb.create(&inactive_user).unwrap();
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::get(endpoint, Headers::new(), &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1237,8 +1241,8 @@ describe! users_router_tests {
                 .email(String::from("inactive_user@example.com"))
                 .finalize().unwrap();
             let user = usersDb.create(&inactive_user).unwrap();
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::get(endpoint, headers, &router) {
                 Ok(response) => {
                     assert!(response.status.is_some());
@@ -1291,8 +1295,8 @@ describe! users_router_tests {
             let mut headers = Headers::new();
             headers.set(Authorization(Bearer { token: signed.to_owned() }));
 
-            let get_users_endpoint = &format!("http://localhost:3000/{}/users",
-                                              API_VERSION);
+            let get_users_endpoint = &format!("http://localhost:3000{}",
+                                              endpoint("/users"));
         }
 
         it "should not allow to get user list to non authenticated requests" {
@@ -1375,8 +1379,8 @@ describe! users_router_tests {
         }
 
         it "should return 400 BadRequest errno 100 if name is missing" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}/activate", 123)));
             match request::put(endpoint, Headers::new(),
                                "{\"password\": \"12345678\"}",
                                &router) {
@@ -1392,8 +1396,8 @@ describe! users_router_tests {
         }
 
         it "should return 400 BadRequest errno 102 if password is missing" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}/activate", 123)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\"}",
                                &router) {
@@ -1409,8 +1413,8 @@ describe! users_router_tests {
         }
 
         it "should return 404 NotFound for unknown user id" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}/activate", 123)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1432,8 +1436,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}/activate", user.id.unwrap())));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
@@ -1457,8 +1461,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}/activate", user.id.unwrap())));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1480,8 +1484,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}/activate", user.id.unwrap())));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1539,8 +1543,8 @@ describe! users_router_tests {
         }
 
         it "should return 401 Unauthorized for invalid auth header" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}", 123)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1555,8 +1559,8 @@ describe! users_router_tests {
         }
 
         it "should return 404 NotFound for unknown user id" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                endpoint(&format!("/users/{}", 123)));
             match request::put(endpoint, headers,
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1579,8 +1583,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}", user.id.unwrap())));
             println!("endpoint {}", endpoint);
 
             if let Ok(users) = usersDb.read(ReadFilter::All) {
@@ -1611,8 +1615,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::put(endpoint, headers,
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
@@ -1637,8 +1641,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::put(endpoint, headers,
                                "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
@@ -1697,8 +1701,8 @@ describe! users_router_tests {
         }
 
         it "should return 401 Unauthorized for invalid auth header" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                    endpoint(&format!("/users/{}", 123)));
             match request::delete(endpoint, Headers::new(), &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1710,8 +1714,8 @@ describe! users_router_tests {
         }
 
         it "should return 404 NotFound for unknown user id" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, 123);
+            let endpoint = &format!("http://localhost:3000{}",
+                                    endpoint(&format!("/users/{}", 123)));
             match request::delete(endpoint, headers, &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1723,8 +1727,8 @@ describe! users_router_tests {
         }
 
         it "should return 423 Locked when trying to remove the last admin" {
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::delete(endpoint, headers, &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1744,8 +1748,8 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000/{}/users/{}",
-                                    API_VERSION, user.id.unwrap());
+            let endpoint = &format!("http://localhost:3000{}",
+                            endpoint(&format!("/users/{}", user.id.unwrap())));
             match request::delete(endpoint, headers, &router) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
