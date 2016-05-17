@@ -513,6 +513,19 @@ impl UsersRouter {
         let user_id: i32;
         get_user_id_from_request!(req, user_id);
 
+        let requester_id = match AuthMiddleware::get_user_id(req) {
+            Some(id) => id,
+            None => return EndpointError::with(
+                status::InternalServerError, 501,
+                Some("Could not get requester id".to_owned())
+            )
+        };
+
+        if requester_id == user_id {
+            return EndpointError::with(status::Locked, 423,
+                Some("You cannot delete yourself".to_owned()));
+        }
+
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
             Ok(users) => {

@@ -263,6 +263,21 @@ impl AuthMiddleware {
             }
         }
     }
+
+    /// Extract the user id from the Authorization header or the url query
+    /// parametes.
+    pub fn get_user_id(req: &mut Request) -> Option<i32> {
+        match AuthMiddleware::get_session_token(req) {
+            Some(token) => {
+                let token = match SessionToken::from_string(&token) {
+                    Ok(token) => token,
+                    Err(_) => return None
+                };
+                Some(token.claims.id)
+            },
+            None => None
+        }
+    }
 }
 
 #[cfg(test)]
