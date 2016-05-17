@@ -272,7 +272,6 @@ Users with non admin privileges are only able to edit their own information.
 Requests must include an authorization header containing a [bearer token](#authentication).
 
 ___Parameters___
-* id - User id.
 * name - Display name.
 * password - User password.
 * is_admin - Flag to give or remove admin permissions.
