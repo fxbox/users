@@ -1137,6 +1137,21 @@ describe! users_router_tests {
             };
         }
 
+        it "should not allow the creation of a new user with malformed email" {
+            match request::post(create_user_endpoint, headers,
+                                "{\"email\": \"malformedemail\"}",
+                                &router) {
+                Ok(_) => assert!(false),
+                Err(error) => {
+                    let response = error.response;
+                    assert!(response.status.is_some());
+                    assert_eq!(response.status.unwrap(), Status::BadRequest);
+                    let json = extract_body_to::<ErrorBody>(response).unwrap();
+                    assert_eq!(json.errno, 101);
+                }
+            };
+        }
+
         it "should allow the creation of a new user" {
             match request::post(create_user_endpoint, headers,
                                 "{\"email\": \"user@domain.org\"}",

@@ -177,8 +177,10 @@ impl UserBuilder {
             self.error = Some(UserBuilderError::Email);
             return self;
         }
+        // XXX improve email validation.
         let parts: Vec<&str> = email.rsplitn(2, '@').collect();
-        if parts[0].is_empty() || parts[1].is_empty() {
+
+        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
             self.error = Some(UserBuilderError::Email);
             return self;
         }
