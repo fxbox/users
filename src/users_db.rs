@@ -112,7 +112,7 @@ pub struct UserBuilder {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UserBuilderError {
-    Username,
+    Name,
     Secret,
     Email,
     Password
@@ -165,7 +165,7 @@ impl UserBuilder {
 
     pub fn name(mut self, name: String) -> Self {
         if name.is_empty() {
-            self.error = Some(UserBuilderError::Username);
+            self.error = Some(UserBuilderError::Name);
             return self;
         }
         self.name = escape(&name);

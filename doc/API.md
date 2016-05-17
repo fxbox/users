@@ -65,7 +65,7 @@ Responses for particular types of error may include additional parameters.
 
 The currently-defined error responses are:
 * status code 400, errno 400: Bad request.
-* status code 400, errno 100: Invalid user name. Missing or malformed user name.
+* status code 400, errno 100: Invalid name. Missing or malformed name.
 * status code 400, errno 101: Invalid email. Missing or malformed email.
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
 * status code 400, errno 103: Missing or malformed authentication header.
@@ -96,14 +96,14 @@ Allow to initiate the box by registering an admin user.
 ### Request
 ___Parameters___
 * email - Admin email.
-* username - Optional. User name. Defaults to "admin".
+* name - Optional. Display name. Defaults to "admin".
 * password - Admin password. It should have a minimum of 8 chars.
 ```ssh
 POST /setup HTTP/1.1
 Content-Type: application/json
 {
   "email": "user@domain.org",
-  "username": "Pepe",
+  "name": "Pepe",
   "password": "whatever"
 }
 ```
@@ -120,7 +120,7 @@ Connection: close
 **Once the admin user is created, this route will return a 410 error, Gone.**.
 
 Failing requests may be due to the following errors:
-* status code 400, errno 100: Invalid user name. Missing or malformed user name.
+* status code 400, errno 100: Invalid name. Missing or malformed name.
 * status code 400, errno 101: Invalid email. Missing or malformed email.
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
 * status code 400, errno 400: Bad request.
@@ -212,13 +212,13 @@ HTTP/1.1 200 OK
 Connection: close
 [{
   "id": "hfkjsIklksadhs",
-  "username": "admin"
+  "name": "admin"
   "email": "admin@domain.org",
   "is_admin": true,
   "is_active": true
 }, {
   "id": "InR5cCI6IkpXVCJ",
-  "username": "pepe"
+  "name": "pepe"
   "email": "user@domain.org",
   "is_admin": false,
   "is_active": true
@@ -251,7 +251,7 @@ HTTP/1.1 200 Ok
 Connection: close
 {
   "id": "InR5cCI6IkpXVCJ",
-  "username": "pepe"
+  "name": "pepe"
   "email": "user@domain.org",
   "is_admin": false,
   "is_active": true
@@ -273,7 +273,7 @@ Requests must include an authorization header containing a [bearer token](#authe
 
 ___Parameters___
 * id - User id.
-* username - User name.
+* name - Display name.
 * password - User password.
 * is_admin - Flag to give or remove admin permissions.
 
@@ -282,7 +282,7 @@ PUT /users/:id HTTP/1.1
 Content-Type: application/json
 Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 {
-  "username": "pepe",
+  "name": "pepe",
   "password": "whatever",
   "is_admin": false
 }
@@ -303,18 +303,18 @@ Failing requests may be due to the following errors:
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
 ## PUT /users/:id/activate
-Activate a user by providing a username and a password.
+Activate a user by providing a name and a password.
 
 ### Request
 ___Parameters___
-* username - User name.
+* name - Optional. Display name.
 * password - User password.
 
 ```ssh
 PUT /users/:id HTTP/1.1
 Content-Type: application/json
 {
-  "username": "pepe",
+  "name": "pepe",
   "password": "whatever"
 }
 ```
@@ -338,7 +338,7 @@ Connection: close
 ```
 
 Failing requests may be due to the following errors:
-* status code 400, errno 100: Invalid user name. Missing or malformed user name.
+* status code 400, errno 100: Invalid name. Missing or malformed name.
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
 * status code 400, errno 400: Bad request.
 * status code 409, errno 409: Gone. The user was already activated.

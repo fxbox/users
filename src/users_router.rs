@@ -104,7 +104,7 @@ impl UsersRouter {
     fn setup(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
-            username: String,
+            name: String,
             email: String,
             password: String
         }
@@ -129,7 +129,7 @@ impl UsersRouter {
         };
 
         let admin = match UserBuilder::new(None)
-            .name(body.username)
+            .name(body.name)
             .email(body.email)
             .password(body.password)
             .admin(true)
@@ -366,7 +366,7 @@ impl UsersRouter {
         // XXX Make this pattern a macro.
         #[derive(RustcDecodable, Debug)]
         struct EditUserBody {
-            username: Option<String>,
+            name: Option<String>,
             password: Option<String>,
             // XXX only admin users should be able to change this value.
             is_admin: Option<bool>
@@ -423,7 +423,7 @@ impl UsersRouter {
                 // UserBuilder takes care of the validation of these two
                 // fields.
                 let mut user = UserBuilder::new(Some(users[0].clone()));
-                if let Some(name) = body.username {
+                if let Some(name) = body.name {
                     user = user.name(name);
                 }
                 if let Some(password) = body.password {
@@ -455,13 +455,13 @@ impl UsersRouter {
     }
 
     /// PUT /users/:id/activate handler.
-    /// Activate a user by providing a username and a password.
+    /// Activate a user by providing a name and a password.
     pub fn activate_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
         // XXX Make this pattern a macro.
         #[derive(RustcDecodable, Debug)]
         struct ActivateUserBody {
-            username: String,
+            name: String,
             password: String
         }
 
@@ -515,7 +515,7 @@ impl UsersRouter {
                 // add the given name and password. UserBuilder takes care
                 // of the validation of these two fields.
                 let user = match UserBuilder::new(Some(users[0].clone()))
-                    .name(body.username)
+                    .name(body.name)
                     .password(body.password)
                     .active(true)
                     .finalize() {
@@ -806,7 +806,7 @@ describe! users_router_tests {
 
         it "should respond 201 Created for a proper POST /setup" {
             match request::post(endpoint, Headers::new(),
-                                "{\"username\": \"username\",
+                                "{\"name\": \"name\",
                                   \"email\": \"username@domain.com\",
                                   \"password\": \"password\"}",
                                 &router) {
@@ -826,9 +826,9 @@ describe! users_router_tests {
         }
 
         it "should create one admin user" {
-            let body = "{\"username\": \"username\",\
-                        \"email\": \"username@domain.com\",\
-                        \"password\": \"password\"}";
+            let body = "{\"name\": \"name\",\
+                         \"email\": \"username@domain.com\",\
+                         \"password\": \"password\"}";
 
             if let Ok(res) = request::post(endpoint, Headers::new(), body,
                                            &router) {
@@ -850,7 +850,7 @@ describe! users_router_tests {
                        .admin(true)
                        .finalize().unwrap()).ok();
             match request::post(endpoint, Headers::new(),
-                                "{\"username\": \"u\",
+                                "{\"name\": \"u\",
                                   \"email\": \"u@d\",
                                   \"password\": \"12345678\"}",
                                 &router) {
@@ -869,7 +869,7 @@ describe! users_router_tests {
             };
         }
 
-        it "should respond 400 BadRequest, errno 100 if username is missing" {
+        it "should respond 400 BadRequest, errno 100 if name is missing" {
             match request::post(endpoint, Headers::new(),
                                 "{\"email\": \"u@d\",
                                   \"password\": \"12345678\"}",
@@ -890,7 +890,7 @@ describe! users_router_tests {
 
         it "should respond 400 BadRequest, errno 101 if email is missing" {
            match request::post(endpoint, Headers::new(),
-                                "{\"username\": \"u\",
+                                "{\"name\": \"u\",
                                   \"password\": \"12345678\"}",
                                 &router) {
                 Ok(_) => {
@@ -909,7 +909,7 @@ describe! users_router_tests {
 
         it "should respond 400 BadRequest, errno 102 if password is missing" {
             match request::post(endpoint, Headers::new(),
-                                "{\"username\": \"u\",
+                                "{\"name\": \"u\",
                                   \"email\": \"u@d\"}",
                                 &router) {
                 Ok(_) => {
@@ -1374,7 +1374,7 @@ describe! users_router_tests {
             usersDb.clear().ok();
         }
 
-        it "should return 400 BadRequest errno 100 if username is missing" {
+        it "should return 400 BadRequest errno 100 if name is missing" {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, 123);
             match request::put(endpoint, Headers::new(),
@@ -1395,7 +1395,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, 123);
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\"}",
+                               "{\"name\": \"name\"}",
                                &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1412,7 +1412,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, 123);
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1435,7 +1435,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, user.id.unwrap());
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"123\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1460,7 +1460,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, user.id.unwrap());
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1483,14 +1483,14 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}/activate",
                                     API_VERSION, user.id.unwrap());
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
                     match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
                         Ok(users) => {
-                            assert_eq!(users[0].name, "username".to_owned());
+                            assert_eq!(users[0].name, "name".to_owned());
                             assert_eq!(users[0].is_active, true);
                         },
                         Err(_) => assert!(false)
@@ -1542,7 +1542,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, 123);
             match request::put(endpoint, Headers::new(),
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1558,7 +1558,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, 123);
             match request::put(endpoint, headers,
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1587,7 +1587,7 @@ describe! users_router_tests {
                 println!("{:?}", users);
             };
             match request::put(endpoint, headers,
-                               "{\"username\": \"manolo\",
+                               "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
                                  \"is_admin\": true}",
                                &router) {
@@ -1614,7 +1614,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, user.id.unwrap());
             match request::put(endpoint, headers,
-                               "{\"username\": \"username\",
+                               "{\"name\": \"name\",
                                  \"password\": \"123\"}",
                                &router) {
                 Ok(_) => assert!(false),
@@ -1640,7 +1640,7 @@ describe! users_router_tests {
             let endpoint = &format!("http://localhost:3000/{}/users/{}",
                                     API_VERSION, user.id.unwrap());
             match request::put(endpoint, headers,
-                               "{\"username\": \"manolo\",
+                               "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
                                  \"is_admin\": true}",
                                &router) {
