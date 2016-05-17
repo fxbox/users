@@ -59,14 +59,14 @@ impl SessionToken {
 
 /// Represents an authenticated endpoint.
 ///
-/// When initializing [AuthMiddleware](./struct.AuthMiddleware.html) you need to
+/// When initializing [`AuthMiddleware`](./struct.AuthMiddleware.html) you need to
 /// pass some routes to be authenticated, these are instances of `AuthEndpoint`.
 ///
 /// `AuthEndpoints` take a vector of methods and a string representing the path
 /// of the endpoint to be authenticated. This path can contain wildcard
 /// parts. For example:
 ///
-/// AuthEndpoint(vec![Method::Get, Method::Post], "/a/path/:foo/bar/:baz")
+/// `AuthEndpoint`(vec![`Method::Get`, `Method::Post`], "/a/path/:foo/bar/:baz")
 ///
 /// would match with a GET or POST request to /a/path/whatever/bar/whatever
 #[derive(Debug, Clone)]

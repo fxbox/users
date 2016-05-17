@@ -11,7 +11,7 @@
 //!
 //! # Examples
 //!
-//! You can create a user with the UserBuilder type and by chaining
+//! You can create a user with the `UserBuilder` type and by chaining
 //! methods this way:
 //!
 //! ```
