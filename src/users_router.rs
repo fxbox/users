@@ -99,6 +99,20 @@ macro_rules! get_user_id_from_request {
     }
 }
 
+macro_rules! parse_request_body {
+    ($req:ident) => ({
+        let mut payload = String::new();
+        $req.body.read_to_string(&mut payload).unwrap();
+        match json::decode(&payload) {
+            Ok(body) => body,
+            Err(error) => {
+                println!("{:?}", error);
+                return from_decoder_error(error);
+            }
+        }
+    })
+}
+
 /// Manages user-related REST operations.
 ///
 /// # Examples
@@ -127,13 +141,6 @@ impl UsersRouter {
     /// POST /setup handler.
     /// Allow to initiate the box by registering an admin user.
     fn setup(req: &mut Request, db_path: &str) -> IronResult<Response> {
-        #[derive(RustcDecodable, Debug)]
-        struct SetupBody {
-            name: String,
-            email: String,
-            password: String
-        }
-
         // This endpoint should be disabled and return error 410 (Gone)
         // if there is any admin user already configured.
         let db = UsersDb::new(db_path);
@@ -143,15 +150,14 @@ impl UsersRouter {
                 Some("There is already an admin account".to_owned()));
         }
 
-        let mut payload = String::new();
-        req.body.read_to_string(&mut payload).unwrap();
-        let body: SetupBody = match json::decode(&payload) {
-            Ok(body) => body,
-            Err(error) => {
-                println!("{:?}", error);
-                return from_decoder_error(error);
-            }
-        };
+        #[derive(RustcDecodable, Debug)]
+        struct SetupBody {
+            name: String,
+            email: String,
+            password: String
+        }
+
+        let body: SetupBody = parse_request_body!(req);
 
         let admin = match UserBuilder::new(None)
             .name(body.name)
@@ -242,15 +248,7 @@ impl UsersRouter {
             email: String
         }
 
-        let mut payload = String::new();
-        req.body.read_to_string(&mut payload).unwrap();
-        let body: CreateUserBody = match json::decode(&payload) {
-            Ok(body) => body,
-            Err(error) => {
-                println!("{:?}", error);
-                return from_decoder_error(error);
-            }
-        };
+        let body: CreateUserBody = parse_request_body!(req);
 
         let user = match UserBuilder::new(None)
             .email(body.email)
@@ -375,7 +373,6 @@ impl UsersRouter {
     ///     one editing its own information.
     pub fn edit_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        // XXX Make this pattern a macro.
         #[derive(RustcDecodable, Debug)]
         struct EditUserBody {
             name: Option<String>,
@@ -384,15 +381,7 @@ impl UsersRouter {
             is_admin: Option<bool>
         }
 
-        let mut payload = String::new();
-        req.body.read_to_string(&mut payload).unwrap();
-        let body: EditUserBody = match json::decode(&payload) {
-            Ok(body) => body,
-            Err(error) => {
-                println!("{:?}", error);
-                return from_decoder_error(error);
-            }
-        };
+        let body: EditUserBody = parse_request_body!(req);
 
         let user_id: i32;
         get_user_id_from_request!(req, user_id);
@@ -456,22 +445,13 @@ impl UsersRouter {
     /// Activate a user by providing a name and a password.
     pub fn activate_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        // XXX Make this pattern a macro.
         #[derive(RustcDecodable, Debug)]
         struct ActivateUserBody {
             name: String,
             password: String
         }
 
-        let mut payload = String::new();
-        req.body.read_to_string(&mut payload).unwrap();
-        let body: ActivateUserBody = match json::decode(&payload) {
-            Ok(body) => body,
-            Err(error) => {
-                println!("{:?}", error);
-                return from_decoder_error(error);
-            }
-        };
+        let body: ActivateUserBody = parse_request_body!(req);
 
         let user_id: i32;
         get_user_id_from_request!(req, user_id);
