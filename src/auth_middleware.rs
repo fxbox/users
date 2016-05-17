@@ -240,7 +240,8 @@ impl AuthMiddleware {
         Ok(())
     }
 
-    /// Extract the session token string from the Authorization header.
+    /// Extract the session token string from the Authorization header or
+    /// the url query parameters.
     pub fn get_session_token(req: &mut Request) -> Option<String> {
         match req.headers.clone()
                  .get::<headers::Authorization<headers::Bearer>>() {
