@@ -77,6 +77,28 @@ struct GetAllUsersResponse {
     users: Vec<User>
 }
 
+macro_rules! get_user_id_from_request {
+    ($req:ident, $user_id:ident) => {
+        let user_id = $req.extensions.get::<Router>().unwrap()
+            .find("id").unwrap_or("").to_owned();
+
+        if user_id.is_empty() {
+            return EndpointError::with(status::BadRequest, 400,
+                                       Some("Missing user id".to_owned()));
+        }
+
+        // XXX Move from i32 to string ids
+        let user_id: i32 = match user_id.parse() {
+            Ok(user_id) => user_id,
+            Err(_) => return EndpointError::with(
+                status::BadRequest, 400, Some("Invalid user id".to_owned())
+            )
+        };
+
+        $user_id = user_id;
+    }
+}
+
 /// Manages user-related REST operations.
 ///
 /// # Examples
@@ -275,22 +297,8 @@ impl UsersRouter {
     ///     access this method. Pending permissions and token scopes system.
     pub fn get_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        // XXX Move this pattern to a macro.
-        let user_id = req.extensions.get::<Router>().unwrap()
-            .find("id").unwrap_or("").to_owned();
-
-        if user_id.is_empty() {
-            return EndpointError::with(status::BadRequest, 400,
-                                       Some("Missing user id".to_owned()));
-        }
-
-        // XXX Move from i32 to string ids
-        let user_id: i32 = match user_id.parse() {
-            Ok(user_id) => user_id,
-            Err(_) => return EndpointError::with(
-                status::BadRequest, 400, Some("Invalid user id".to_owned())
-            )
-        };
+        let user_id: i32;
+        get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
@@ -386,22 +394,8 @@ impl UsersRouter {
             }
         };
 
-        // XXX Move this pattern to a macro or helper.
-        let user_id = req.extensions.get::<Router>().unwrap()
-            .find("id").unwrap_or("").to_owned();
-
-        if user_id.is_empty() {
-            return EndpointError::with(status::BadRequest, 400,
-                                       Some("Missing user id".to_owned()));
-        }
-
-        // XXX Move from i32 to string ids
-        let user_id: i32 = match user_id.parse() {
-            Ok(user_id) => user_id,
-            Err(_) => return EndpointError::with(
-                status::BadRequest, 400, Some("Invalid user id".to_owned())
-            )
-        };
+        let user_id: i32;
+        get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
@@ -479,22 +473,8 @@ impl UsersRouter {
             }
         };
 
-        // XXX Move this pattern to a macro or helper.
-        let user_id = req.extensions.get::<Router>().unwrap()
-            .find("id").unwrap_or("").to_owned();
-
-        if user_id.is_empty() {
-            return EndpointError::with(status::BadRequest, 400,
-                                       Some("Missing user id".to_owned()));
-        }
-
-        // XXX Move from i32 to string ids
-        let user_id: i32 = match user_id.parse() {
-            Ok(user_id) => user_id,
-            Err(_) => return EndpointError::with(
-                status::BadRequest, 400, Some("Invalid user id".to_owned())
-            )
-        };
+        let user_id: i32;
+        get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
@@ -550,22 +530,8 @@ impl UsersRouter {
     ///     request a admin scope.
     pub fn delete_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        // XXX Move this pattern to a macro or helper.
-        let user_id = req.extensions.get::<Router>().unwrap()
-            .find("id").unwrap_or("").to_owned();
-
-        if user_id.is_empty() {
-            return EndpointError::with(status::BadRequest, 400,
-                                       Some("Missing user id".to_owned()));
-        }
-
-        // XXX Move from i32 to string ids
-        let user_id: i32 = match user_id.parse() {
-            Ok(user_id) => user_id,
-            Err(_) => return EndpointError::with(
-                status::BadRequest, 400, Some("Invalid user id".to_owned())
-            )
-        };
+        let user_id: i32;
+        get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
