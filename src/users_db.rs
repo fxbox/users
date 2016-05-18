@@ -36,10 +36,11 @@
 use pwhash::bcrypt;
 use libc::c_int;
 use rusqlite::{ self, Connection };
+use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct User {
-    pub id: Option<i32>,
+    pub id: String,
     pub name: String,
     pub email: String,
     pub password: String,
@@ -100,7 +101,7 @@ pub struct User {
 /// ```
 #[derive(Debug)]
 pub struct UserBuilder {
-    id: Option<i32>,
+    id: String,
     name: String,
     email: String,
     password: String,
@@ -134,7 +135,7 @@ impl UserBuilder {
 
     pub fn new(user: Option<User>) -> UserBuilder {
         match user {
-            Some(user) =>   UserBuilder {
+            Some(user) => UserBuilder {
                 id: user.id,
                 name: user.name,
                 email: user.email,
@@ -145,7 +146,7 @@ impl UserBuilder {
                 is_active: user.is_active
             },
             None => UserBuilder {
-                id: None,
+                id: Uuid::new_v4().simple().to_string(),
                 name: String::new(),
                 email: String::new(),
                 password: String::new(),
@@ -155,11 +156,10 @@ impl UserBuilder {
                 is_active: false
             }
         }
-
     }
 
-    pub fn id(mut self, id: i32) -> Self {
-        self.id = Some(id);
+    pub fn id(mut self, id: String) -> Self {
+        self.id = id;
         self
     }
 
@@ -222,9 +222,12 @@ impl UserBuilder {
     }
 
     pub fn finalize(mut self) -> Result<User, UserWithError> {
-        use rand;
         if self.secret.is_empty() {
-            self.secret = rand::random::<i32>().to_string();
+            self.secret = Uuid::new_v4().simple().to_string();
+        }
+
+        if self.id.is_empty() {
+            self.id = Uuid::new_v4().simple().to_string();
         }
 
         let user = User {
@@ -253,7 +256,7 @@ impl UserBuilder {
 
 pub enum ReadFilter {
     All,
-    Id(i32),
+    Id(String),
     Name(String),
     Email(String),
     Credentials(String, String),
@@ -287,7 +290,7 @@ impl UsersDb {
     pub fn new(path: &str) -> UsersDb {
         let connection = Connection::open(path).unwrap();
         connection.execute("CREATE TABLE IF NOT EXISTS users (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                id          TEXT PRIMARY KEY,
                 name        TEXT,
                 email       TEXT NOT NULL UNIQUE,
                 password    TEXT,
@@ -306,7 +309,7 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::{UsersManager, UserBuilder, ReadFilter};
+    /// # use foxbox_users::{ UsersManager, UserBuilder, ReadFilter };
     /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
     /// let db = manager.get_db();
     /// # db.create(&UserBuilder::new(None).name(String::from("John Doe")).finalize().unwrap());
@@ -327,7 +330,7 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::{UsersManager, UserBuilder};
+    /// # use foxbox_users::{ UsersManager, UserBuilder };
     /// let admin = UserBuilder::new(None).name(String::from("admin")).admin(true).finalize().unwrap();
     /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
     /// let db = manager.get_db();
@@ -335,9 +338,9 @@ impl UsersDb {
     /// ```
     pub fn create(&self, user: &User) -> rusqlite::Result<User> {
         match self.connection.execute("INSERT INTO users
-            (name, email, password, secret, is_admin, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6)",
-            &[&user.name, &user.email, &user.password, &user.secret,
+            (id, name, email, password, secret, is_admin, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            &[&user.id, &user.name, &user.email, &user.password, &user.secret,
               &user.is_admin, &user.is_active]
         ) {
             Ok(_) => {
@@ -358,7 +361,7 @@ impl UsersDb {
     /// For instance, to get all users:
     ///
     /// ```no_run
-    /// # use foxbox_users::{UsersManager, User, ReadFilter};
+    /// # use foxbox_users::{ UsersManager, User, ReadFilter };
     /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
     /// let db = manager.get_db();
     /// let all_users: Vec<User> = db.read(ReadFilter::All).unwrap();
@@ -367,7 +370,7 @@ impl UsersDb {
     /// And to quickly find administrators:
     ///
     /// ```no_run
-    /// # use foxbox_users::{UsersManager, User, ReadFilter};
+    /// # use foxbox_users::{ UsersManager, User, ReadFilter };
     /// let manager = UsersManager::new("UsersDb_read_1.sqlite");
     /// let db = manager.get_db();
     /// let admins: Vec<User> = db.read(ReadFilter::IsAdmin(true)).unwrap();
@@ -381,11 +384,11 @@ impl UsersDb {
             ReadFilter::All => {
                 try!(stmt.query(&[]))
             },
-            ReadFilter::Id(id) => {
+            ReadFilter::Id(ref id) => {
                 stmt = try!(
                     self.connection.prepare("SELECT * FROM users WHERE id=$1")
                 );
-                try!(stmt.query(&[&id]))
+                try!(stmt.query(&[&escape(id)]))
             },
             ReadFilter::Name(ref name) => {
                 stmt = try!(
@@ -443,7 +446,7 @@ impl UsersDb {
     }
 
     /// Removes a user identified by its id.
-    pub fn delete(&self, id: i32) -> rusqlite::Result<c_int> {
+    pub fn delete(&self, id: &str) -> rusqlite::Result<c_int> {
         self.connection.execute("DELETE FROM users WHERE id=$1", &[&id])
     }
 }
@@ -454,7 +457,6 @@ describe! user_builder_tests {
         use pwhash::bcrypt;
 
         let user = UserBuilder::new(None)
-            .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
             .password(String::from("pass12345678"))
@@ -462,7 +464,7 @@ describe! user_builder_tests {
             .finalize()
             .unwrap();
 
-        assert_eq!(user.id, Some(1));
+        assert!(!user.id.is_empty());
         assert_eq!(user.name, "Mr Fox");
         assert_eq!(user.email, "fox@mozilla.org");
         assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
@@ -475,7 +477,6 @@ describe! user_builder_tests {
         use pwhash::bcrypt;
 
         let user = UserBuilder::new(None)
-            .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
             .password(String::from("pass12345678"))
@@ -485,7 +486,7 @@ describe! user_builder_tests {
             .finalize()
             .unwrap();
 
-        assert_eq!(user.id, Some(1));
+        assert!(!user.id.is_empty());
         assert_eq!(user.name, "Mr Fox");
         assert_eq!(user.email, "fox@mozilla.org");
         assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
@@ -498,14 +499,13 @@ describe! user_builder_tests {
         use pwhash::bcrypt;
 
         let user = UserBuilder::new(None)
-            .id(1)
             .name(String::from("Mr Fox"))
             .email(String::from("fox@mozilla.org"))
             .password(String::from("pass12345678"))
             .finalize()
             .unwrap();
 
-        assert_eq!(user.id, Some(1));
+        assert!(!user.id.is_empty());
         assert_eq!(user.name, "Mr Fox");
         assert_eq!(user.email, "fox@mozilla.org");
         assert_eq!(bcrypt::verify("pass12345678", &user.password), true);
@@ -540,19 +540,22 @@ describe! user_db_tests {
 
         let defaultUsers = vec![
             UserBuilder::new(None)
-                .id(1).name(String::from("User1"))
+                .id(String::from("1"))
+                .name(String::from("User1"))
                 .email(String::from("user1@mozilla.org"))
                 .password(String::from("password1"))
                 .secret(String::from("secret1"))
                 .finalize().unwrap(),
             UserBuilder::new(None)
-                .id(2).name(String::from("User2"))
+                .id(String::from("2"))
+                .name(String::from("User2"))
                 .email(String::from("user2@mozilla.org"))
                 .password(String::from("password2"))
                 .secret(String::from("secret2"))
                 .finalize().unwrap(),
             UserBuilder::new(None)
-                .id(3).name(String::from("User3"))
+                .id(String::from("3"))
+                .name(String::from("User3"))
                 .email(String::from("user3@mozilla.org"))
                 .password(String::from("password3"))
                 .secret(String::from("secret3"))
@@ -582,7 +585,7 @@ describe! user_db_tests {
     it "should read user by id" {
         for user in &defaultUsers {
             let users = usersDb.read(
-                ReadFilter::Id(user.id.unwrap())).unwrap();
+                ReadFilter::Id(user.id.clone())).unwrap();
             assert_eq!(users.len(), 1);
             assert_eq!(users[0].id, user.id);
             assert_eq!(users[0].name, user.name);
@@ -633,7 +636,7 @@ describe! user_db_tests {
     }
 
     it "should delete users correctly" {
-        usersDb.delete(1).unwrap();
+        usersDb.delete("1").unwrap();
         let usersInDb = usersDb.read(ReadFilter::All).unwrap();
         assert_eq!(usersInDb.len(), defaultUsers.len() -1);
         assert_eq!(usersInDb, &defaultUsers[1..]);

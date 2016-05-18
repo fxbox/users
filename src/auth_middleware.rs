@@ -30,7 +30,7 @@ use urlencoded::UrlEncodedQuery;
 /// database unique id and email respectively.
 #[derive(Default, RustcDecodable, RustcEncodable)]
 pub struct SessionClaims{
-    pub id: i32,
+    pub id: String,
     pub email: String
 }
 
@@ -41,7 +41,7 @@ impl SessionToken {
     pub fn from_user(user: &User) -> Result<String, Error> {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
-            id: user.id.unwrap(),
+            id: user.id.to_owned(),
             email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
@@ -219,10 +219,12 @@ impl AuthMiddleware {
             Err(_) => return Err(())
         };
 
+        let id = token.claims.id.clone();
+
         // To verify the token we need to get the secret associated to
         // user id contained in the token claim.
         let db = UsersDb::new(auth_db_file);
-        match db.read(ReadFilter::Id(token.claims.id)) {
+        match db.read(ReadFilter::Id(id)) {
             Ok(users) => {
                 if users.len() != 1 {
                     return Err(());
@@ -266,7 +268,7 @@ impl AuthMiddleware {
 
     /// Extract the user id from the Authorization header or the url query
     /// parametes.
-    pub fn get_user_id(req: &mut Request) -> Option<i32> {
+    pub fn get_user_id(req: &mut Request) -> Option<String> {
         match AuthMiddleware::get_session_token(req) {
             Some(token) => {
                 let token = match SessionToken::from_string(&token) {
@@ -355,14 +357,15 @@ describe! auth_middleware_tests {
         use super::super::UserBuilder;
         use super::super::users_db::remove_test_db;
 
-        use iron::headers::{Authorization, Bearer};
+        use iron::headers::{ Authorization, Bearer };
         use crypto::sha2::Sha256;
         use jwt;
 
         let db = manager.get_db();
         db.clear().ok();
         let user = UserBuilder::new(None)
-            .id(1).name(String::from("username"))
+            .id(String::from("1221"))
+            .name(String::from("username"))
             .password(String::from("password"))
             .email(String::from("username@example.com"))
             .secret(String::from("secret"))
@@ -370,7 +373,7 @@ describe! auth_middleware_tests {
         db.create(&user).ok();
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
-            id: user.id.unwrap(),
+            id: user.id.to_owned(),
             email: user.email.to_owned()
         };
         let token = jwt::Token::new(jwt_header, claims);
