@@ -10,6 +10,9 @@
 
 #[cfg(test)]
 extern crate iron_test;
+#[macro_use]
+#[cfg(test)]
+extern crate url;
 
 extern crate crypto;
 extern crate iron;

@@ -291,8 +291,8 @@ describe! auth_middleware_tests {
         use iron::status::Status;
         use iron_test::request;
         use router::Router;
-        use super::super::users_db::get_db_environment;
-        use super::super::UsersManager;
+        use users_db::get_db_environment;
+        use UsersManager;
 
         let manager = UsersManager::new(&get_db_environment());
         fn not_implemented(_: &mut Request) -> IronResult<Response> {
@@ -319,125 +319,148 @@ describe! auth_middleware_tests {
         ]);
     }
 
-    it "should allow request to not authenticated endpoint" {
-        match request::get("http://localhost:3000/not_authenticated",
-                           Headers::new(), &chain) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
+    describe! not_authenticated_requests {
+        it "should allow request to not authenticated endpoint" {
+            match request::get("http://localhost:3000/not_authenticated",
+                               Headers::new(), &chain) {
+                Ok(res) => {
+                    assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                },
+                Err(_) => assert!(false)
+            };
+        }
+
+        it "should reject request to authenticated endpoint" {
+            match request::get("http://localhost:3000/authenticated",
+                               Headers::new(), &chain) {
+                Ok(_) => assert!(false),
+                Err(err) => {
+                    assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+                }
+            };
+            match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
+                               Headers::new(), &chain) {
+                Ok(_) => assert!(false),
+                Err(err) => {
+                    assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+                }
+            };
+            match request::delete("http://localhost:3000/authenticated",
+                                  Headers::new(), &chain) {
+                Ok(_) => assert!(false),
+                Err(err) => {
+                    assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
+                }
+            };
         }
     }
 
-    it "should reject request to authenticated endpoint" {
-        match request::get("http://localhost:3000/authenticated",
-                           Headers::new(), &chain) {
-            Ok(_) => assert!(false),
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
-            }
-        };
-        match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
-                           Headers::new(), &chain) {
-            Ok(_) => assert!(false),
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
-            }
-        };
-        match request::delete("http://localhost:3000/authenticated",
-                              Headers::new(), &chain) {
-            Ok(_) => assert!(false),
-            Err(err) => {
-                assert_eq!(err.response.status.unwrap(), Status::Unauthorized)
-            }
-        }
-    }
+    describe! authenticated_requests {
+        before_each {
+            use crypto::sha2::Sha256;
+            use jwt;
+            use users_db::remove_test_db;
+            use UserBuilder;
 
-    it "should allow request to authenticated endpoint" {
-        use super::super::UserBuilder;
-        use super::super::users_db::remove_test_db;
+            let db = manager.get_db();
+            db.clear().ok();
+            let user = UserBuilder::new(None)
+                .name(String::from("username"))
+                .password(String::from("password"))
+                .email(String::from("username@example.com"))
+                .secret(String::from("secret"))
+                .finalize().unwrap();
+            db.create(&user).ok();
 
-        use iron::headers::{ Authorization, Bearer };
-        use crypto::sha2::Sha256;
-        use jwt;
-
-        let db = manager.get_db();
-        db.clear().ok();
-        let user = UserBuilder::new(None)
-            .id(String::from("1221"))
-            .name(String::from("username"))
-            .password(String::from("password"))
-            .email(String::from("username@example.com"))
-            .secret(String::from("secret"))
-            .finalize().unwrap();
-        db.create(&user).ok();
-        let jwt_header: jwt::Header = Default::default();
-        let claims = SessionClaims {
-            id: user.id.to_owned(),
-            email: user.email.to_owned()
-        };
-        let token = jwt::Token::new(jwt_header, claims);
-        let signed = token.signed(
-            user.secret.to_owned().as_bytes(),
-            Sha256::new()
-        ).ok().unwrap();
-
-        // With Authorization header.
-        let mut headers = Headers::new();
-        headers.set(Authorization(Bearer { token: signed.to_owned() }));
-        match request::get("http://localhost:3000/authenticated",
-                           headers.clone(), &chain) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
-        };
-        match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
-                           headers.clone(), &chain) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
-        };
-        match request::delete("http://localhost:3000/authenticated",
-                              headers, &chain) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.to_owned(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
         }
 
-        // With ?auth=<token>
-        match request::get(
-            &format!("http://localhost:3000/authenticated?auth={}", signed),
-            Headers::new(), &chain
-        ) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
-        };
-
-        match request::get(
-            &format!("http://localhost:3000/authenticated/afoo/bar/abaz?auth={}", signed),
-            Headers::new(), &chain
-        ) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
-        };
-
-        match request::delete(
-            &format!("http://localhost:3000/authenticated?auth={}", signed),
-            Headers::new(), &chain
-        ) {
-            Ok(res) => {
-                assert_eq!(res.status.unwrap(), Status::NotImplemented)
-            },
-            Err(_) => assert!(false)
+        after_each {
+            remove_test_db();
         }
 
-        remove_test_db();
+        describe! with_auth_header {
+            before_each {
+                use iron::headers::{ Authorization, Bearer };
+                let mut headers = Headers::new();
+                headers.set(Authorization(Bearer { token: signed.to_owned() }));
+            }
+
+            it "should allow request to authenticated endpoint" {
+                match request::get("http://localhost:3000/authenticated",
+                                   headers.clone(), &chain) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+                match request::get("http://localhost:3000/authenticated/afoo/bar/abaz",
+                                   headers.clone(), &chain) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+                match request::delete("http://localhost:3000/authenticated",
+                                      headers, &chain) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+            }
+        }
+
+        describe! with_auth_query_parameter {
+            before_each {
+                use url::percent_encoding::{ utf8_percent_encode, QUERY_ENCODE_SET };
+
+                define_encode_set! {
+                    pub CUSTOM_ENCODE_SET = [QUERY_ENCODE_SET] | {'+'}
+                }
+                let signed = utf8_percent_encode(&signed, CUSTOM_ENCODE_SET);
+            }
+
+            it "should allow request to authenticated endpoint" {
+                 match request::get(
+                    &format!("http://localhost:3000/authenticated?auth={}", signed),
+                    Headers::new(), &chain
+                ) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+
+                match request::get(
+                    &format!("http://localhost:3000/authenticated/afoo/bar/abaz?auth={}", signed),
+                    Headers::new(), &chain
+                ) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+
+                match request::delete(
+                    &format!("http://localhost:3000/authenticated?auth={}", signed),
+                    Headers::new(), &chain
+                ) {
+                    Ok(res) => {
+                        assert_eq!(res.status.unwrap(), Status::NotImplemented)
+                    },
+                    Err(_) => assert!(false)
+                };
+            }
+        }
     }
 }
