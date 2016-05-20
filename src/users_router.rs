@@ -700,7 +700,7 @@ describe! users_router_tests {
             let endpoints = vec![
                 (vec![Method::Post], format!("{}/login", API_VERSION))
             ];
-            for endpoint in endpoints {
+            for endpoint in endpoints.clone() {
                 let (_, path) = endpoint;
                 let path = format!("http://localhost:3000/{}",
                                    &(path.replace(":", "foo")));

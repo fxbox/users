@@ -567,8 +567,8 @@ describe! user_db_tests {
         }
 
         // Check integrity
-        match usersDb.read() {
-            Ok(users) => assert_eq!(users.len(), _users.len),
+        match usersDb.read(ReadFilter::All) {
+            Ok(users) => assert_eq!(users.len(), (&defaultUsers).len()),
             Err(err) => panic!("Error reading database {}", err),
         }
     }
@@ -576,8 +576,9 @@ describe! user_db_tests {
     it "should read users from db" {
         let usersInDb = usersDb.read(ReadFilter::All).unwrap();
 
-        assert_eq!(usersInDb.len(), defaultUsers.len());
-        for (user, defaultUser) in usersInDb.iter().zip(defaultUsers) {
+        assert_eq!(usersInDb.len(), (&defaultUsers).len());
+
+        for (user, defaultUser) in usersInDb.iter().zip(defaultUsers.clone()) {
             assert_eq!(*user, defaultUser);
         }
     }
