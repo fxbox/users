@@ -88,7 +88,7 @@ The currently-defined error responses are:
     * [GET /users](#get-users) :lock:
     * [GET /users/:id](#get-usersid) :lock:
     * [PUT /users/:id](#put-usersid) :lock:
-    * [PUT /users/:id/activate](#put-usersidactivate)
+    * [PUT /users/:id/activate](#put-usersidactivate) :lock:
     * [DELETE /users/:id](#delete-usersid) :lock:
 
 ## POST /setup
@@ -159,7 +159,7 @@ Failing requests may be due to the following errors:
 * status code 401, errno 401: Unauthorized. If credentials are not valid.
 
 ## POST /users
-Create a new inactive user registration and sends an activation email to the user specified email.
+Create a new inactive user registration.
 
 Only users with admin privileges are able to access this method.
 
@@ -178,12 +178,13 @@ Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 }
 ```
 ### Response
-Successful requests will produce a "201 Created" response with a body containing an activation url:
+Successful requests will produce a "201 Created" response with a body containing an activation url. 
+This activation url will contain a temporary session token that will be exchanged by a long live token on user activation:
 ```ssh
 HTTP/1.1 201 Created
 Connection: close
 {
-  "activation_url": "/v1/users/InR5cCI6IkpXVCJ"
+  "activation_url": "/v1/users/InR5cCI6IkpXVCJ?auth=BWdsaxhZGRpbjpPcGVuU2VzYW1l"
 }
 ```
 
@@ -305,13 +306,15 @@ Failing requests may be due to the following errors:
 Activate a user by providing a name and a password.
 
 ### Request
+Requests must include an authorization header containing a [bearer token](#authentication).
 ___Parameters___
 * name - Optional. Display name.
 * password - User password.
 
 ```ssh
-PUT /users/:id HTTP/1.1
+PUT /users/:id/activate HTTP/1.1
 Content-Type: application/json
+Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 {
   "name": "pepe",
   "password": "whatever"
@@ -340,6 +343,7 @@ Failing requests may be due to the following errors:
 * status code 400, errno 100: Invalid name. Missing or malformed name.
 * status code 400, errno 102: Invalid password. The password should have a minimum of 8 chars.
 * status code 400, errno 400: Bad request.
+* status code 401, errno 401: Unauthorized. If credentials are not valid.
 * status code 409, errno 409: Gone. The user was already activated.
 
 ## DELETE /users/:id

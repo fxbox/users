@@ -262,12 +262,21 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         match db.create(&user) {
             Ok(user) => {
+                // XXX This token will have a short ttl.
+                //     https://github.com/fxbox/users/issues/84
+                let session_token = match SessionToken::from_user(&user) {
+                    Ok(token) => token,
+                    Err(_) => return EndpointError::with(
+                        status::InternalServerError, 501,
+                        Some("Could not generate activation token".to_owned())
+                    )
+                };
+
                 let activation_url = endpoint(
-                    &format!("/users/{}",user.id)
+                    &format!("/users/{}?auth={}",user.id, session_token)
                 );
 
-                // XXX For now we simply log the activation url. We need to
-                // send it over email.
+                // To help testing, we print the url here.
                 println!("New user: activation url {}", activation_url);
 
                 let body = match json::encode(&CreateUserResponse{
@@ -639,7 +648,9 @@ impl UsersRouter {
             AuthEndpoint(vec![Method::Post, Method::Get],
                          endpoint("/users")),
             AuthEndpoint(vec![Method::Get, Method::Put, Method::Delete],
-                         endpoint("/users/:id"))
+                         endpoint("/users/:id")),
+            AuthEndpoint(vec![Method::Put],
+                         endpoint("/users/:id/activate")),
         ], data);
 
         let mut chain = Chain::new(router);
@@ -1340,13 +1351,42 @@ describe! users_router_tests {
 
     describe! activate_user_tests {
         before_each {
+            use url::percent_encoding::{ utf8_percent_encode, QUERY_ENCODE_SET };
+
             let usersDb = manager.get_db();
             usersDb.clear().ok();
+            // Admin user.
+            let user = UserBuilder::new(None)
+                       .name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("admin@example.com"))
+                       .admin(true)
+                       .active(true)
+                       .finalize().unwrap();
+            let user = usersDb.create(&user).unwrap();
+
+            let jwt_header: jwt::Header = Default::default();
+            let claims = SessionClaims {
+                id: user.id.to_owned(),
+                email: user.email.to_owned()
+            };
+            let token = jwt::Token::new(jwt_header, claims);
+            let signed = token.signed(
+                user.secret.to_owned().as_bytes(),
+                Sha256::new()
+            ).ok().unwrap();
+
+            define_encode_set! {
+                pub CUSTOM_ENCODE_SET = [QUERY_ENCODE_SET] | {'+'}
+            }
+            let signed = utf8_percent_encode(&signed, CUSTOM_ENCODE_SET);
         }
 
         it "should return 400 BadRequest errno 100 if name is missing" {
-            let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", 123)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", 123, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"password\": \"12345678\"}",
                                &router) {
@@ -1362,8 +1402,10 @@ describe! users_router_tests {
         }
 
         it "should return 400 BadRequest errno 102 if password is missing" {
-            let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", 123)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", 123, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\"}",
                                &router) {
@@ -1379,8 +1421,10 @@ describe! users_router_tests {
         }
 
         it "should return 404 NotFound for unknown user id" {
-            let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", 123)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", 123, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1401,8 +1445,10 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}/activate", user.id)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", user.id, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
@@ -1425,8 +1471,10 @@ describe! users_router_tests {
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
-            let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", user.id)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", user.id, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1447,8 +1495,10 @@ describe! users_router_tests {
                        .finalize().unwrap();
             let user = usersDb.create(&user).unwrap();
 
-            let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", user.id)));
+            let endpoint = &format!(
+                "http://localhost:3000{}",
+                endpoint(&format!("/users/{}/activate?auth={}", user.id, signed))
+            );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1547,7 +1597,6 @@ describe! users_router_tests {
 
             let endpoint = &format!("http://localhost:3000{}",
                             endpoint(&format!("/users/{}", user.id)));
-            println!("endpoint {}", endpoint);
 
             if let Ok(users) = usersDb.read(ReadFilter::All) {
                 println!("{:?}", users);
