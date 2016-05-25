@@ -87,8 +87,7 @@ macro_rules! get_user_id_from_request {
                                        Some("Missing user id".to_owned()));
         }
 
-        // XXX Move from i32 to string ids
-        let user_id: i32 = match user_id.parse() {
+        let user_id: String = match user_id.parse() {
             Ok(user_id) => user_id,
             Err(_) => return EndpointError::with(
                 status::BadRequest, 400, Some("Invalid user id".to_owned())
@@ -264,7 +263,7 @@ impl UsersRouter {
         match db.create(&user) {
             Ok(user) => {
                 let activation_url = endpoint(
-                    &format!("/users/{}",user.id.unwrap())
+                    &format!("/users/{}",user.id)
                 );
 
                 // XXX For now we simply log the activation url. We need to
@@ -295,7 +294,7 @@ impl UsersRouter {
     ///     access this method. Pending permissions and token scopes system.
     pub fn get_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        let user_id: i32;
+        let user_id: String;
         get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
@@ -336,11 +335,9 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::All) {
             Ok(users) => {
-                // XXX UserBuilder should use Option for several values
-                //     and allow to finalize ignoring certain fields.
                 let users = users.iter().map(
                     |user| UserBuilder::new(None)
-                        .id(user.id.unwrap())
+                        .id(user.id.clone())
                         .name(user.name.clone())
                         .email(user.email.clone())
                         .admin(user.is_admin)
@@ -383,7 +380,7 @@ impl UsersRouter {
 
         let body: EditUserBody = parse_request_body!(req);
 
-        let user_id: i32;
+        let user_id: String;
         get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
@@ -453,7 +450,7 @@ impl UsersRouter {
 
         let body: ActivateUserBody = parse_request_body!(req);
 
-        let user_id: i32;
+        let user_id: String;
         get_user_id_from_request!(req, user_id);
 
         let db = UsersDb::new(db_path);
@@ -510,7 +507,7 @@ impl UsersRouter {
     ///     request a admin scope.
     pub fn delete_user(req: &mut Request, db_path: &str)
         -> IronResult<Response> {
-        let user_id: i32;
+        let user_id: String;
         get_user_id_from_request!(req, user_id);
 
         let requester_id = match AuthMiddleware::get_user_id(req) {
@@ -558,8 +555,8 @@ impl UsersRouter {
                     }
                 }
 
-                if let Some(id) = users[0].id {
-                    match db.delete(id) {
+                if !users[0].id.is_empty() {
+                    match db.delete(&users[0].id) {
                         Ok(_) => Ok(Response::with((status::NoContent))),
                         Err(error) => {
                             println!("{:?}", error);
@@ -703,7 +700,7 @@ describe! users_router_tests {
             let endpoints = vec![
                 (vec![Method::Post], format!("{}/login", API_VERSION))
             ];
-            for endpoint in endpoints {
+            for endpoint in endpoints.clone() {
                 let (_, path) = endpoint;
                 let path = format!("http://localhost:3000/{}",
                                    &(path.replace(":", "foo")));
@@ -807,7 +804,7 @@ describe! users_router_tests {
         it "should respond 410 Gone if an admin account exists" {
             // Be sure we have an admin
             usersDb.create(&UserBuilder::new(None)
-                       .id(1).name(String::from("admin"))
+                       .name(String::from("admin"))
                        .password(String::from("password!!"))
                        .email(String::from("admin@example.com"))
                        .admin(true)
@@ -900,17 +897,9 @@ describe! users_router_tests {
         before_each {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
-            // Create active user.
-            usersDb.create(&UserBuilder::new(None)
-                       .id(1).name(String::from("username"))
-                       .password(String::from("password"))
-                       .email(String::from("username@example.com"))
-                       .secret(String::from("secret"))
-                       .active(true)
-                       .finalize().unwrap()).ok();
             // Create inactive user.
             usersDb.create(&UserBuilder::new(None)
-                       .id(2).name(String::from("inactive_user"))
+                       .name(String::from("inactive_user"))
                        .password(String::from("password"))
                        .email(String::from("inactive_user@example.com"))
                        .secret(String::from("secret"))
@@ -1011,6 +1000,14 @@ describe! users_router_tests {
 
         it "should respond with a 201 Created and a valid JWT token in body for
             valid credentials" {
+            // Create active user.
+            let user = usersDb.create(&UserBuilder::new(None)
+                       .name(String::from("username"))
+                       .password(String::from("password"))
+                       .email(String::from("username@example.com"))
+                       .secret(String::from("secret"))
+                       .active(true)
+                       .finalize().unwrap()).unwrap();
             let valid_credentials = Authorization(Basic {
                 username: "username@example.com".to_owned(),
                 password: Some("password".to_owned())
@@ -1025,8 +1022,8 @@ describe! users_router_tests {
                     let token = body_obj.session_token;
                     let claims = jwt::Token::<jwt::Header, SessionClaims>::parse(&token)
                                 .ok().unwrap().claims;
-                    assert_eq!(claims.id, 1);
-                    assert_eq!(claims.email, "username@example.com");
+                    assert_eq!(claims.id, user.id);
+                    assert_eq!(claims.email, user.email);
                 },
                 Err(_) => assert!(false)
             };
@@ -1042,20 +1039,20 @@ describe! users_router_tests {
             let usersDb = manager.get_db();
             usersDb.clear().ok();
             let user = UserBuilder::new(None)
-                       .id(1).name(String::from("username"))
+                       .name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
                        .admin(true)
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let create_user_endpoint = &format!("http://localhost:3000{}",
                                                 endpoint("/users"));
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
-                id: user.id.unwrap(),
+                id: user.id.to_owned(),
                 email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
@@ -1149,17 +1146,17 @@ describe! users_router_tests {
             usersDb.clear().ok();
             // Admin user.
             let user = UserBuilder::new(None)
-                       .id(1).name(String::from("username"))
+                       .name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
                        .admin(true)
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
-                id: user.id.unwrap(),
+                id: user.id.to_owned(),
                 email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
@@ -1189,14 +1186,13 @@ describe! users_router_tests {
         it "should not allow getting user info to non authenticated
             requests" {
             let inactive_user = UserBuilder::new(None)
-                .id(1)
                 .name(String::from("username"))
                 .password(String::from("password"))
                 .email(String::from("inactive_user@example.com"))
                 .finalize().unwrap();
             let user = usersDb.create(&inactive_user).unwrap();
             let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}", user.id.unwrap())));
+                                endpoint(&format!("/users/{}", user.id)));
             match request::get(endpoint, Headers::new(), &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1209,14 +1205,13 @@ describe! users_router_tests {
 
         it "should return 200 OK with the user information" {
             let inactive_user = UserBuilder::new(None)
-                .id(1)
                 .name(String::from("username"))
                 .password(String::from("password"))
                 .email(String::from("inactive_user@example.com"))
                 .finalize().unwrap();
             let user = usersDb.create(&inactive_user).unwrap();
             let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}", user.id.unwrap())));
+                                endpoint(&format!("/users/{}", user.id)));
             match request::get(endpoint, headers, &router) {
                 Ok(response) => {
                     assert!(response.status.is_some());
@@ -1246,17 +1241,17 @@ describe! users_router_tests {
             usersDb.clear().ok();
             // Admin user.
             let user = UserBuilder::new(None)
-                       .id(1).name(String::from("username"))
+                       .name(String::from("username"))
                        .password(String::from("password"))
                        .email(String::from("username@example.com"))
                        .admin(true)
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
-                id: user.id.unwrap(),
+                id: user.id.to_owned(),
                 email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
@@ -1292,10 +1287,9 @@ describe! users_router_tests {
                     let body_obj = extract_body_to::<GetAllUsersResponse>
                                    (response).unwrap();
                     assert_eq!(body_obj.users.len(), 1);
-                    assert_eq!(body_obj.users[0].id, Some(1));
-                    assert_eq!(body_obj.users[0].name, "username".to_owned());
-                    assert_eq!(body_obj.users[0].email,
-                               "username@example.com".to_owned());
+                    assert_eq!(body_obj.users[0].id, user.id);
+                    assert_eq!(body_obj.users[0].name, user.name);
+                    assert_eq!(body_obj.users[0].email, user.email);
                     assert_eq!(body_obj.users[0].is_admin, true);
                     assert_eq!(body_obj.users[0].is_active, true);
                 },
@@ -1307,12 +1301,12 @@ describe! users_router_tests {
         }
 
         it "should return 200 OK with a list of two users" {
-            usersDb.create(&UserBuilder::new(None)
-                       .id(2).name(String::from("inactive_user"))
+            let another_user = usersDb.create(&UserBuilder::new(None)
+                       .name(String::from("inactive_user"))
                        .password(String::from("password"))
                        .email(String::from("inactive_user@example.com"))
                        .secret(String::from("secret"))
-                       .finalize().unwrap()).ok();
+                       .finalize().unwrap()).unwrap();
 
             match request::get(get_users_endpoint, headers, &router) {
                 Ok(response) => {
@@ -1321,16 +1315,14 @@ describe! users_router_tests {
                     let body_obj = extract_body_to::<GetAllUsersResponse>
                                    (response).unwrap();
                     assert_eq!(body_obj.users.len(), 2);
-                    assert_eq!(body_obj.users[0].id, Some(1));
-                    assert_eq!(body_obj.users[0].name, "username".to_owned());
-                    assert_eq!(body_obj.users[0].email,
-                               "username@example.com".to_owned());
+                    assert_eq!(body_obj.users[0].id, user.id);
+                    assert_eq!(body_obj.users[0].name, user.name);
+                    assert_eq!(body_obj.users[0].email, user.email);
                     assert_eq!(body_obj.users[0].is_admin, true);
                     assert_eq!(body_obj.users[0].is_active, true);
-                    assert_eq!(body_obj.users[1].id, Some(2));
-                    assert_eq!(body_obj.users[1].name, "inactive_user".to_owned());
-                    assert_eq!(body_obj.users[1].email,
-                               "inactive_user@example.com".to_owned());
+                    assert_eq!(body_obj.users[1].id, another_user.id);
+                    assert_eq!(body_obj.users[1].name, another_user.name);
+                    assert_eq!(body_obj.users[1].email, another_user.email);
                     assert_eq!(body_obj.users[1].is_admin, false);
                     assert_eq!(body_obj.users[1].is_active, false);
                 },
@@ -1404,14 +1396,13 @@ describe! users_router_tests {
 
         it "should return 400 BadRequest errno 102 if password is too short" {
             let user = UserBuilder::new(None)
-                       .id(1)
                        .email(String::from("username@example.com"))
                        .active(false)
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}/activate", user.id.unwrap())));
+                            endpoint(&format!("/users/{}/activate", user.id)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
@@ -1429,14 +1420,13 @@ describe! users_router_tests {
 
         it "should return 409 Gone if user is already active" {
             let user = UserBuilder::new(None)
-                       .id(1)
                        .email(String::from("username@example.com"))
                        .active(true)
                        .finalize().unwrap();
             usersDb.create(&user).ok();
 
             let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", user.id.unwrap())));
+                                endpoint(&format!("/users/{}/activate", user.id)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
@@ -1452,21 +1442,20 @@ describe! users_router_tests {
 
         it "should return 204 NoContent activating a inactive user" {
             let user = UserBuilder::new(None)
-                       .id(1)
                        .email(String::from("username@example.com"))
                        .active(false)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let endpoint = &format!("http://localhost:3000{}",
-                                endpoint(&format!("/users/{}/activate", user.id.unwrap())));
+                                endpoint(&format!("/users/{}/activate", user.id)));
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
-                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                    match usersDb.read(ReadFilter::Id(user.id)) {
                         Ok(users) => {
                             assert_eq!(users[0].name, "name".to_owned());
                             assert_eq!(users[0].is_active, true);
@@ -1492,17 +1481,17 @@ describe! users_router_tests {
             usersDb.clear().ok();
             // Admin user.
             let user = UserBuilder::new(None)
-                       .id(1).name(String::from("admin"))
+                       .name(String::from("admin"))
                        .password(String::from("password"))
                        .email(String::from("admin@example.com"))
                        .admin(true)
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
-                id: user.id.unwrap(),
+                id: user.id,
                 email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
@@ -1550,15 +1539,14 @@ describe! users_router_tests {
 
         it "should return 412 PreconditionFailed if user is not active" {
             let user = UserBuilder::new(None)
-                       .id(2)
                        .name(String::from("username"))
                        .email(String::from("username@example.com"))
                        .active(false)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}", user.id.unwrap())));
+                            endpoint(&format!("/users/{}", user.id)));
             println!("endpoint {}", endpoint);
 
             if let Ok(users) = usersDb.read(ReadFilter::All) {
@@ -1583,14 +1571,13 @@ describe! users_router_tests {
 
         it "should return 400 BadRequest errno 102 if password is too short" {
             let user = UserBuilder::new(None)
-                       .id(1)
                        .email(String::from("username@example.com"))
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}", user.id.unwrap())));
+                            endpoint(&format!("/users/{}", user.id)));
             match request::put(endpoint, headers,
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
@@ -1608,15 +1595,14 @@ describe! users_router_tests {
 
         it "should return 204 NoContent when editting the user succeeds" {
             let user = UserBuilder::new(None)
-                       .id(1)
                        .name(String::from("username"))
                        .email(String::from("username@example.com"))
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}", user.id.unwrap())));
+                            endpoint(&format!("/users/{}", user.id)));
             match request::put(endpoint, headers,
                                "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
@@ -1624,7 +1610,7 @@ describe! users_router_tests {
                                &router) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
-                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                    match usersDb.read(ReadFilter::Id(user.id)) {
                         Ok(users) => {
                             assert_eq!(users[0].name, "manolo".to_owned());
                             assert_eq!(users[0].is_admin, true);
@@ -1650,17 +1636,17 @@ describe! users_router_tests {
             usersDb.clear().ok();
             // Admin user.
             let user = UserBuilder::new(None)
-                       .id(1).name(String::from("admin"))
+                       .name(String::from("admin"))
                        .password(String::from("password"))
                        .email(String::from("admin@example.com"))
                        .admin(true)
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let jwt_header: jwt::Header = Default::default();
             let claims = SessionClaims {
-                id: user.id.unwrap(),
+                id: user.id.to_owned(),
                 email: user.email.to_owned()
             };
             let token = jwt::Token::new(jwt_header, claims);
@@ -1702,7 +1688,7 @@ describe! users_router_tests {
 
         it "should return 423 Locked when trying to remove the last admin" {
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}", user.id.unwrap())));
+                            endpoint(&format!("/users/{}", user.id)));
             match request::delete(endpoint, headers, &router) {
                 Ok(_) => assert!(false),
                 Err(error) => {
@@ -1715,19 +1701,18 @@ describe! users_router_tests {
 
         it "should return 204 NoContent when removing the user succeeds" {
             let user = UserBuilder::new(None)
-                       .id(2)
                        .name(String::from("username"))
                        .email(String::from("username@example.com"))
                        .active(true)
                        .finalize().unwrap();
-            usersDb.create(&user).ok();
+            let user = usersDb.create(&user).unwrap();
 
             let endpoint = &format!("http://localhost:3000{}",
-                            endpoint(&format!("/users/{}", user.id.unwrap())));
+                            endpoint(&format!("/users/{}", user.id)));
             match request::delete(endpoint, headers, &router) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
-                    match usersDb.read(ReadFilter::Id(user.id.unwrap())) {
+                    match usersDb.read(ReadFilter::Id(user.id)) {
                         Ok(users) => {
                             assert!(users.is_empty())
                         },

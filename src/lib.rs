@@ -10,6 +10,9 @@
 
 #[cfg(test)]
 extern crate iron_test;
+#[macro_use]
+#[cfg(test)]
+extern crate url;
 
 extern crate crypto;
 extern crate iron;
@@ -17,12 +20,12 @@ extern crate iron_cors;
 extern crate jwt;
 extern crate libc;
 extern crate pwhash;
-extern crate rand;
 extern crate router;
 extern crate rustc_serialize;
 extern crate rusqlite;
 extern crate unicase;
 extern crate urlencoded;
+extern crate uuid;
 
 mod users_db;
 mod users_router;
