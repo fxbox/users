@@ -164,10 +164,6 @@ impl UserBuilder {
     }
 
     pub fn name(mut self, name: String) -> Self {
-        if name.is_empty() {
-            self.error = Some(UserBuilderError::Name);
-            return self;
-        }
         self.name = escape(&name);
         self
     }
