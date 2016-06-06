@@ -457,13 +457,11 @@ impl UsersRouter {
             password: String
         }
 
-        println!("ACTIVATE USER");
         let body: ActivateUserBody = parse_request_body!(req);
 
         let user_id: String;
         get_user_id_from_request!(req, user_id);
 
-        println!("User id {}", user_id);
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
             Ok(users) => {
@@ -473,7 +471,6 @@ impl UsersRouter {
                 }
 
                 if users.is_empty() {
-                    println!("NO USER :(");
                     return EndpointError::with(status::NotFound,
                         404, Some("User not found".to_owned()))
                 }
@@ -499,7 +496,7 @@ impl UsersRouter {
                     }
                 };
                 match db.update(&user) {
-                    Ok(_) => Ok(Response::with((status::NoContent))),
+                    Ok(_) => SessionTokenResponse::with_user(&user),
                     Err(error) => {
                         println!("{:?}", error);
                         from_sqlite_error(error)
