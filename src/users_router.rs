@@ -273,7 +273,7 @@ impl UsersRouter {
                 };
 
                 let activation_url = endpoint(
-                    &format!("/users/{}?auth={}",user.id, session_token)
+                    &format!("/users/{}/activate?auth={}",user.id, session_token)
                 );
 
                 // To help testing, we print the url here.
@@ -457,11 +457,13 @@ impl UsersRouter {
             password: String
         }
 
+        println!("ACTIVATE USER");
         let body: ActivateUserBody = parse_request_body!(req);
 
         let user_id: String;
         get_user_id_from_request!(req, user_id);
 
+        println!("User id {}", user_id);
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::Id(user_id)) {
             Ok(users) => {
@@ -471,6 +473,7 @@ impl UsersRouter {
                 }
 
                 if users.is_empty() {
+                    println!("NO USER :(");
                     return EndpointError::with(status::NotFound,
                         404, Some("User not found".to_owned()))
                 }
@@ -710,7 +713,8 @@ describe! users_router_tests {
             use iron::method::Method;
 
             let endpoints = vec![
-                (vec![Method::Post], format!("{}/login", API_VERSION))
+                (vec![Method::Post], format!("{}/login", API_VERSION)),
+                (vec![Method::Put], format!("{}/users/:id/activate", API_VERSION))
             ];
             for endpoint in endpoints.clone() {
                 let (_, path) = endpoint;
