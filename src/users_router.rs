@@ -640,7 +640,8 @@ impl UsersRouter {
         });
 
         let cors = CORS::new(vec![
-            (vec![Method::Post], endpoint("/login"))
+            (vec![Method::Post], endpoint("/login")),
+            (vec![Method::Put], endpoint("/users/:id/activate"))
         ]);
 
         let data = String::from(db_path);
