@@ -164,7 +164,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
 ///     use foxbox_users::UsersManager;
 ///     use iron::prelude::{Chain, Iron};
 ///
-///     let manager = UsersManager::new("AuthMiddleware_0.sqlite");
+///     let manager = UsersManager::new("AuthMiddleware_0.sqlite", None);
 ///     let router = manager.get_router_chain();
 ///     let mut chain = Chain::new(router);
 ///     chain.around(manager.get_middleware(vec![]));
@@ -294,7 +294,7 @@ describe! auth_middleware_tests {
         use users_db::get_db_environment;
         use UsersManager;
 
-        let manager = UsersManager::new(&get_db_environment());
+        let manager = UsersManager::new(&get_db_environment(), None);
         fn not_implemented(_: &mut Request) -> IronResult<Response> {
             Ok(Response::with(Status::NotImplemented))
         }

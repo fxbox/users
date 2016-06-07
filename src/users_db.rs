@@ -306,7 +306,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{ UsersManager, UserBuilder, ReadFilter };
-    /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
+    /// let manager = UsersManager::new("UsersDb_clear_0.sqlite", None);
     /// let db = manager.get_db();
     /// # db.create(&UserBuilder::new(None).name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
@@ -328,7 +328,7 @@ impl UsersDb {
     /// ```no_run
     /// # use foxbox_users::{ UsersManager, UserBuilder };
     /// let admin = UserBuilder::new(None).name(String::from("admin")).admin(true).finalize().unwrap();
-    /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
+    /// let manager = UsersManager::new("UsersDb_create_0.sqlite", None);
     /// let db = manager.get_db();
     /// assert!(db.create(&admin).is_ok());
     /// ```
@@ -358,7 +358,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{ UsersManager, User, ReadFilter };
-    /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
+    /// let manager = UsersManager::new("UsersDb_read_0.sqlite", None);
     /// let db = manager.get_db();
     /// let all_users: Vec<User> = db.read(ReadFilter::All).unwrap();
     /// ```
@@ -367,7 +367,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{ UsersManager, User, ReadFilter };
-    /// let manager = UsersManager::new("UsersDb_read_1.sqlite");
+    /// let manager = UsersManager::new("UsersDb_read_1.sqlite", None);
     /// let db = manager.get_db();
     /// let admins: Vec<User> = db.read(ReadFilter::IsAdmin(true)).unwrap();
     /// ```

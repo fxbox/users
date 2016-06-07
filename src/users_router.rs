@@ -12,8 +12,9 @@
 //! can be found in the GitHub repository.
 
 use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
-use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 use super::errors::*;
+use super::InvitationDispatcher;
+use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 
 use iron::status;
 use iron::headers::{ Authorization, Basic };
@@ -126,7 +127,11 @@ macro_rules! parse_request_body {
 ///     use foxbox_users::UsersManager;
 ///     use iron::prelude::{ Chain, Iron };
 ///
-///     let manager = UsersManager::new("UsersRouter_0.sqlite");
+///     fn dispatcher(_: String) -> () {
+///         println!("Dummy email dispatcher");
+///     };
+///     let manager = UsersManager::new("UsersRouter_0.sqlite",
+///                                     Some(dispatcher));
 ///     let router = manager.get_router_chain();
 ///     let mut chain = Chain::new(router);
 /// # if false {
@@ -240,7 +245,9 @@ impl UsersRouter {
     ///
     /// XXX Once we have a permissions system, this functionality will require
     /// admin permissions.
-    pub fn create_user(req: &mut Request, db_path: &str)
+    pub fn create_user(req: &mut Request,
+                       db_path: &str,
+                       invitation_dispatcher: &Option<InvitationDispatcher>)
         -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct CreateUserBody {
@@ -275,6 +282,12 @@ impl UsersRouter {
                 let activation_url = endpoint(
                     &format!("/users/{}/activate?auth={}",user.id, session_token)
                 );
+
+                // If we have a invitation dispatcher, we give it the activation
+                // url.
+                if let Some(dispatcher) = *invitation_dispatcher {
+                    dispatcher(activation_url.clone());
+                };
 
                 // To help testing, we print the url here.
                 println!("New user: activation url {}", activation_url);
@@ -585,7 +598,9 @@ impl UsersRouter {
     }
 
     /// Creates the Iron user router middleware.
-    pub fn init(db_path: &str) -> super::iron::middleware::Chain {
+    pub fn init(db_path: &str,
+                invitation_dispatcher: &Option<InvitationDispatcher>)
+        -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
         // Setup.
@@ -604,9 +619,10 @@ impl UsersRouter {
 
         // User management.
         let data = String::from(db_path);
+        let invitation_dispatcher = invitation_dispatcher.clone();
         router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::create_user(req, &data)
+            UsersRouter::create_user(req, &data, &invitation_dispatcher)
         });
 
         let data = String::from(db_path);
@@ -700,7 +716,7 @@ describe! users_router_tests {
             json::decode(&extract_body_to_string(response))
         }
 
-        let manager = UsersManager::new(&get_db_environment());
+        let manager = UsersManager::new(&get_db_environment(), None);
         let router = manager.get_router_chain();
     }
 
@@ -1490,7 +1506,7 @@ describe! users_router_tests {
             };
         }
 
-        it "should return 204 NoContent activating a inactive user" {
+        it "should return 201 Created activating a inactive user" {
             let user = UserBuilder::new(None)
                        .email(String::from("username@example.com"))
                        .active(false)
@@ -1506,7 +1522,7 @@ describe! users_router_tests {
                                  \"password\": \"12345678\"}",
                                &router) {
                 Ok(response) => {
-                    assert_eq!(response.status.unwrap(), Status::NoContent);
+                    assert_eq!(response.status.unwrap(), Status::Created);
                     match usersDb.read(ReadFilter::Id(user.id)) {
                         Ok(users) => {
                             assert_eq!(users[0].name, "name".to_owned());
