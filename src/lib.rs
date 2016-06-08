@@ -27,10 +27,11 @@ extern crate unicase;
 extern crate urlencoded;
 extern crate uuid;
 
-mod users_db;
-mod users_router;
 mod auth_middleware;
 mod errors;
+mod invitation_middleware;
+mod users_db;
+mod users_router;
 
 pub use users_db::UsersDb as UsersDb;
 pub use users_db::UserBuilder as UserBuilder;
@@ -62,7 +63,7 @@ impl UsersManager {
     }
 
     pub fn get_users_router(&self) -> UsersRouterReturnType {
-        UsersRouter::new(&self.db_file_path)
+        UsersRouter::init(&self.db_file_path)
     }
 
     pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)

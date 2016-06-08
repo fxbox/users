@@ -13,6 +13,7 @@
 
 use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
 use super::errors::*;
+use super::invitation_middleware::{ InvitationMiddleware, InvitationDispatcher };
 use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 
 use iron::status;
@@ -62,8 +63,9 @@ impl SessionTokenResponse {
 
 /// Body response for POST /users
 #[derive(Debug, RustcDecodable, RustcEncodable)]
-struct CreateUserResponse {
-    activation_url: String
+pub struct CreateUserResponse {
+    pub email: String,
+    pub activation_url: String
 }
 
 /// Body response for GET /users/:id
@@ -113,13 +115,6 @@ macro_rules! parse_request_body {
     })
 }
 
-/// Pointer to a function responsible for sending a invitation email.
-/// The function will be given the user's email address and a string
-/// containing the endpoint path required to activate a new user
-/// (i.e.: "/v1/users/12312313/activate?auth=avalidauthtoken")
-pub type InvitationDispatcher =
-    fn(user_email: String, user_activation_endpoint: String) -> ();
-
 /// Manages user-related REST operations.
 ///
 /// # Examples
@@ -134,12 +129,8 @@ pub type InvitationDispatcher =
 ///     use foxbox_users::UsersManager;
 ///     use iron::prelude::{ Chain, Iron };
 ///
-///     fn dispatcher(_: String) -> () {
-///         println!("Dummy email dispatcher");
-///     };
-///     let manager = UsersManager::new("UsersRouter_0.sqlite",
-///                                     Some(dispatcher));
-///     let router = manager.get_router_chain();
+///     let manager = UsersManager::new("UsersRouter_0.sqlite");
+///     let router = manager.get_users_router().chain;
 ///     let mut chain = Chain::new(router);
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
@@ -147,8 +138,7 @@ pub type InvitationDispatcher =
 /// }
 /// ```
 pub struct UsersRouter {
-    db_path: String,
-    invitation_dispatcher: Arc<RwLock<Option<InvitationDispatcher>>>
+    invitation_middleware: Arc<RwLock<InvitationMiddleware>>
 }
 
 pub struct UsersRouterReturnType {
@@ -261,8 +251,7 @@ impl UsersRouter {
     /// XXX Once we have a permissions system, this functionality will require
     /// admin permissions.
     pub fn create_user(req: &mut Request,
-                       db_path: &str,
-                       invitation_dispatcher: Arc<RwLock<Option<InvitationDispatcher>>>)
+                       db_path: &str)
         -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct CreateUserBody {
@@ -272,7 +261,7 @@ impl UsersRouter {
         let body: CreateUserBody = parse_request_body!(req);
 
         let user = match UserBuilder::new(None)
-            .email(body.email)
+            .email(body.email.clone())
             .finalize() {
                 Ok(user) => user,
                 Err(user_with_error) => {
@@ -298,17 +287,11 @@ impl UsersRouter {
                     &format!("/users/{}/activate?auth={}",user.id, session_token)
                 );
 
-                let guard = invitation_dispatcher.read().unwrap();
-                // If we have a invitation dispatcher, we give it the activation
-                // url.
-                if let Some(dispatcher) = *guard {
-                    dispatcher(body.email, activation_url.clone());
-                };
-
                 // To help testing, we print the url here.
                 println!("New user: activation url {}", activation_url);
 
-                let body = match json::encode(&CreateUserResponse{
+                let body = match json::encode(&CreateUserResponse {
+                    email: body.email,
                     activation_url: activation_url
                 }) {
                     Ok(body) => body,
@@ -613,7 +596,7 @@ impl UsersRouter {
         }
     }
 
-    pub fn new(db_path: &str) -> UsersRouterReturnType {
+    pub fn init(db_path: &str) -> UsersRouterReturnType {
         let mut router = Router::new();
 
         // Setup.
@@ -632,10 +615,9 @@ impl UsersRouter {
 
         // User management.
         let data = String::from(db_path);
-        let invitation_dispatcher = Arc::new(RwLock::new(None));
         router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::create_user(req, &data, invitation_dispatcher)
+            UsersRouter::create_user(req, &data)
         });
 
         let data = String::from(db_path);
@@ -683,17 +665,27 @@ impl UsersRouter {
                          endpoint("/users/:id/activate")),
         ], data);
 
+        let invitation_middleware = Arc::new(
+            RwLock::new(InvitationMiddleware::new(String::from(API_VERSION)))
+        );
+        let guard = invitation_middleware.write().unwrap();
         let mut chain = Chain::new(router);
-        chain.link_after(cors);
         chain.link_around(auth_middleware);
+        chain.link_after(cors);
+        chain.link_after(guard.clone());
 
         UsersRouterReturnType{
             router: UsersRouter {
-                db_path: db_path.to_owned(),
-                invitation_dispatcher: invitation_dispatcher
+                invitation_middleware: invitation_middleware.clone()
             },
             chain: chain
         }
+    }
+
+    pub fn set_invitation_dispatcher(&mut self,
+                                     dispatcher: InvitationDispatcher) {
+        let mut guard = self.invitation_middleware.write().unwrap();
+        guard.set_invitation_dispatcher(dispatcher);
     }
 }
 
@@ -735,8 +727,8 @@ describe! users_router_tests {
             json::decode(&extract_body_to_string(response))
         }
 
-        let manager = UsersManager::new(&get_db_environment(), None);
-        let router = manager.get_router_chain();
+        let manager = UsersManager::new(&get_db_environment());
+        let router = manager.get_users_router().chain;
     }
 
     describe! cors_tests {

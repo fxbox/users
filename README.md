@@ -52,12 +52,21 @@ use foxbox_users::UsersManager;
 use iron::prelude::*;
 
 fn main() {
-    fn dispatcher(path: String) -> () {
+    // Invitation email dispatcher
+    fn dispatcher(email: String, path: String) -> () {
+      // You are supposed to send an email here.
       println!("This is a dummy email dispatcher callback {}", path);
     };
-    let manager = UsersManager::new("sqlite_db.sqlite", Some(dispatcher));
-    let router = manager.get_router_chain();
-    Iron::new(router).http("localhost:3000").unwrap();
+    let manager = UsersManager::new("sqlite_db.sqlite");
+    let users_router = manager.get_users_router();
+    let router = Arc::new(RwLock::new(users_router.router));
+    thread::spawn(move || {
+        println!("Adding invitation dispatcher");
+        thread::sleep(Duration::from_millis(1000));
+        let mut guard = router.write().unwrap();
+        guard.set_invitation_dispatcher(dispatcher);
+    });
+    Iron::new(users_router.chain).http("localhost:3000").unwrap();
 }
 ```
 
@@ -81,7 +90,7 @@ fn dummy_handler(_: &mut Request) -> IronResult<Response> {
 }
 
 fn main() {
-    let manager = UsersManager::new("sqlite_db.sqlite", None);
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let mut router =  Router::new();
     router.get("/authenticated", dummy_handler);
     router.get("/authenticated2", dummy_handler);
@@ -118,7 +127,7 @@ extern crate foxbox_users;
 use foxbox_users::{ReadFilter, UserBuilder};
 
 fn main() {
-    let manager = UsersManager::new("sqlite_db.sqlite", None);
+    let manager = UsersManager::new("sqlite_db.sqlite");
     let db = manager.get_db();
     let user = UserBuilder::new()
         .name("MrFox")
