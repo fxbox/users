@@ -178,13 +178,14 @@ Authorization: Bearer QWxhZGRpbjpPcGVuU2VzYW1l...
 }
 ```
 ### Response
-Successful requests will produce a "201 Created" response with a body containing an activation url. 
+Successful requests will produce a "201 Created" response with a body containing the user's email and an activation url. 
 This activation url will contain a temporary session token that will be exchanged by a long live token on user activation:
 ```ssh
 HTTP/1.1 201 Created
 Connection: close
 {
-  "activation_url": "/v1/users/InR5cCI6IkpXVCJ?auth=BWdsaxhZGRpbjpPcGVuU2VzYW1l"
+  "email": "user@domain.org",
+  "activation_url": "/v1/users/InR5cCI6IkpXVCJ/activate?auth=BWdsaxhZGRpbjpPcGVuU2VzYW1l"
 }
 ```
 
