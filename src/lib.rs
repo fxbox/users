@@ -38,33 +38,21 @@ pub use users_db::UserBuilderError as UserBuilderError;
 pub use users_db::ReadFilter as ReadFilter;
 pub use users_db::User as User;
 pub use users_router::UsersRouter as UsersRouter;
+pub use users_router::UsersRouterReturnType as UsersRouterReturnType;
 pub use auth_middleware::AuthMiddleware as AuthMiddleware;
 pub use auth_middleware::AuthEndpoint as AuthEndpoint;
 pub use auth_middleware::SessionToken as SessionToken;
 
-/// Pointer to a function responsible for sending a invitation email.
-/// The function will be given a string containing the endpoint path required
-/// to activate a new user
-/// (i.e.: "/v1/users/12312313/activate?auth=avalidauthtoken")
-pub type InvitationDispatcher =
-    fn(user_activation_endpoint: String) -> ();
-
 pub struct UsersManager {
-    db_file_path: String,
-    invitation_dispatcher: Option<InvitationDispatcher>
+    db_file_path: String
 }
 
 impl UsersManager {
-
     /// Create the UsersManager.
     /// The database will be stored at `db_file_path`.
-    /// `invitation_dispatcher` will be executed every time a new user is
-    /// created.
-    pub fn new(db_file_path: &str,
-               invitation_dispatcher: Option<InvitationDispatcher>) -> Self {
+    pub fn new(db_file_path: &str)-> Self {
         UsersManager {
-            db_file_path: String::from(db_file_path),
-            invitation_dispatcher: invitation_dispatcher
+            db_file_path: String::from(db_file_path)
         }
     }
 
@@ -73,10 +61,8 @@ impl UsersManager {
         UsersDb::new(&self.db_file_path)
     }
 
-    /// Get a new router chain
-    pub fn get_router_chain(&self) -> iron::middleware::Chain {
-        UsersRouter::init(&self.db_file_path,
-                          &self.invitation_dispatcher)
+    pub fn get_users_router(&self) -> UsersRouterReturnType {
+        UsersRouter::new(&self.db_file_path)
     }
 
     pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)
