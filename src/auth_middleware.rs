@@ -165,8 +165,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
 ///     use iron::prelude::{Chain, Iron};
 ///
 ///     let manager = UsersManager::new("AuthMiddleware_0.sqlite");
-///     let router = manager.get_users_router().chain;
-///     let mut chain = Chain::new(router);
+///     let mut chain = Chain::new(manager.get_users_router());
 ///     chain.around(manager.get_middleware(vec![]));
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();

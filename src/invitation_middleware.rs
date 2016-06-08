@@ -42,7 +42,6 @@ impl InvitationMiddleware {
 impl AfterMiddleware for InvitationMiddleware {
     fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
-
         if req.method != Method::Post ||
            req.url.path != vec![self.version.clone(), "users".to_owned()] {
             return Ok(res);
@@ -58,7 +57,6 @@ impl AfterMiddleware for InvitationMiddleware {
         }
         let payload = String::from_utf8(payload).unwrap();
         let payload: DecodeResult<CreateUserResponse> = json::decode(&payload);
-        println!("{:?}", payload);
         match payload {
             Ok(payload) => {
                 let guard = self.invitation_dispatcher.read().unwrap();

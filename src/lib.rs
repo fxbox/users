@@ -39,13 +39,14 @@ pub use users_db::UserBuilderError as UserBuilderError;
 pub use users_db::ReadFilter as ReadFilter;
 pub use users_db::User as User;
 pub use users_router::UsersRouter as UsersRouter;
-pub use users_router::UsersRouterReturnType as UsersRouterReturnType;
 pub use auth_middleware::AuthMiddleware as AuthMiddleware;
 pub use auth_middleware::AuthEndpoint as AuthEndpoint;
 pub use auth_middleware::SessionToken as SessionToken;
+pub use invitation_middleware::InvitationDispatcher as InvitationDispatcher;
 
 pub struct UsersManager {
-    db_file_path: String
+    db_file_path: String,
+    router: UsersRouter
 }
 
 impl UsersManager {
@@ -53,7 +54,8 @@ impl UsersManager {
     /// The database will be stored at `db_file_path`.
     pub fn new(db_file_path: &str)-> Self {
         UsersManager {
-            db_file_path: String::from(db_file_path)
+            db_file_path: String::from(db_file_path),
+            router: UsersRouter::new(db_file_path)
         }
     }
 
@@ -62,8 +64,13 @@ impl UsersManager {
         UsersDb::new(&self.db_file_path)
     }
 
-    pub fn get_users_router(&self) -> UsersRouterReturnType {
-        UsersRouter::init(&self.db_file_path)
+    pub fn get_users_router(&self) -> iron::middleware::Chain {
+        self.router.init()
+    }
+
+    pub fn set_invitation_dispatcher(&mut self,
+                                     invitation_dispatcher: InvitationDispatcher) {
+        self.router.set_invitation_dispatcher(invitation_dispatcher);
     }
 
     pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)

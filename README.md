@@ -58,15 +58,16 @@ fn main() {
       println!("This is a dummy email dispatcher callback {}", path);
     };
     let manager = UsersManager::new("sqlite_db.sqlite");
-    let users_router = manager.get_users_router();
-    let router = Arc::new(RwLock::new(users_router.router));
+    let manager = Arc::new(RwLock::new(manager));
+    let cloned = manager.clone();
     thread::spawn(move || {
         println!("Adding invitation dispatcher");
-        thread::sleep(Duration::from_millis(1000));
-        let mut guard = router.write().unwrap();
+        thread::sleep(Duration::from_millis(3000));
+        let mut guard = cloned.write().unwrap();
         guard.set_invitation_dispatcher(dispatcher);
     });
-    Iron::new(users_router.chain).http("localhost:3000").unwrap();
+    Iron::new(manager.write().unwrap().get_users_router())
+      .http("localhost:3000").unwrap();
 }
 ```
 
