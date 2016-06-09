@@ -42,14 +42,14 @@ pub use users_router::UsersRouter as UsersRouter;
 pub use auth_middleware::AuthMiddleware as AuthMiddleware;
 pub use auth_middleware::AuthEndpoint as AuthEndpoint;
 pub use auth_middleware::SessionToken as SessionToken;
-pub use invitation_middleware::InvitationDispatcher as InvitationDispatcher;
+pub use invitation_middleware::EmailDispatcher as EmailDispatcher;
 
-pub struct UsersManager {
+pub struct UsersManager<T: EmailDispatcher> {
     db_file_path: String,
-    router: UsersRouter
+    router: UsersRouter<T>
 }
 
-impl UsersManager {
+impl<T: EmailDispatcher> UsersManager<T> {
     /// Create the UsersManager.
     /// The database will be stored at `db_file_path`.
     pub fn new(db_file_path: &str)-> Self {
@@ -69,7 +69,8 @@ impl UsersManager {
     }
 
     pub fn set_invitation_dispatcher(&mut self,
-                                     invitation_dispatcher: InvitationDispatcher) {
+                                     invitation_dispatcher: T) {
+        println!("Setting dispatcher {:?}", invitation_dispatcher);
         self.router.set_invitation_dispatcher(invitation_dispatcher);
     }
 

@@ -13,7 +13,7 @@
 
 use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
 use super::errors::*;
-use super::invitation_middleware::{ InvitationMiddleware, InvitationDispatcher };
+use super::invitation_middleware::{ InvitationMiddleware, EmailDispatcher };
 use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 
 use iron::status;
@@ -126,22 +126,27 @@ macro_rules! parse_request_body {
 /// extern crate foxbox_users;
 ///
 /// fn main() {
-///     use foxbox_users::UsersManager;
+///     use foxbox_users::{ EmailDispatcher, UsersManager };
 ///     use iron::prelude::{ Chain, Iron };
 ///
-///     let manager = UsersManager::new("UsersRouter_0.sqlite");
+///     #[derive(Clone, Debug)]
+///     struct InvitationDispatcher;
+///     impl EmailDispatcher for InvitationDispatcher {
+///         fn send(&self, _: String, _: String) -> () {}
+///     }
+///     let manager = UsersManager::<InvitationDispatcher>::new("UsersRouter_0.sqlite");
 ///     let mut chain = Chain::new(manager.get_users_router());
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
 /// # }
 /// }
 /// ```
-pub struct UsersRouter {
+pub struct UsersRouter<T: EmailDispatcher> {
     db_path: String,
-    invitation_middleware: Arc<RwLock<InvitationMiddleware>>
+    invitation_middleware: Arc<RwLock<InvitationMiddleware<T>>>
 }
 
-impl UsersRouter {
+impl<T: EmailDispatcher> UsersRouter<T> {
     /// POST /setup handler.
     /// Allow to initiate the box by registering an admin user.
     fn setup(req: &mut Request, db_path: &str) -> IronResult<Response> {
@@ -607,51 +612,51 @@ impl UsersRouter {
         let data = self.db_path.clone();
         router.post(endpoint("/setup"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::setup(req, &data)
+            UsersRouter::<T>::setup(req, &data)
         });
 
         // Login.
         let data = self.db_path.clone();
         router.post(endpoint("/login"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::login(req, &data)
+            UsersRouter::<T>::login(req, &data)
         });
 
         // User management.
         let data = self.db_path.clone();
         router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::create_user(req, &data)
+            UsersRouter::<T>::create_user(req, &data)
         });
 
         let data = self.db_path.clone();
         router.get(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_user(req, &data)
+            UsersRouter::<T>::get_user(req, &data)
         });
 
         let data = self.db_path.clone();
         router.get(endpoint("/users"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_all_users(req, &data)
+            UsersRouter::<T>::get_all_users(req, &data)
         });
 
         let data = self.db_path.clone();
         router.put(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::edit_user(req, &data)
+            UsersRouter::<T>::edit_user(req, &data)
         });
 
         let data = self.db_path.clone();
         router.put(endpoint("/users/:id/activate"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::activate_user(req, &data)
+            UsersRouter::<T>::activate_user(req, &data)
         });
 
         let data = self.db_path.clone();
         router.delete(endpoint("/users/:id"),
                       move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::delete_user(req, &data)
+            UsersRouter::<T>::delete_user(req, &data)
         });
 
         let cors = CORS::new(vec![
@@ -679,7 +684,7 @@ impl UsersRouter {
     }
 
     pub fn set_invitation_dispatcher(&mut self,
-                                     dispatcher: InvitationDispatcher) {
+                                     dispatcher: T) {
         let mut guard = self.invitation_middleware.write().unwrap();
         guard.set_invitation_dispatcher(dispatcher);
     }
@@ -696,6 +701,7 @@ describe! users_router_tests {
         use auth_middleware::SessionClaims;
         #[allow(unused_imports)]
         use crypto::sha2::Sha256;
+        use EmailDispatcher;
         #[allow(unused_imports)]
         use errors::ErrorBody;
         #[allow(unused_imports)]
@@ -723,7 +729,15 @@ describe! users_router_tests {
             json::decode(&extract_body_to_string(response))
         }
 
-        let manager = UsersManager::new(&get_db_environment());
+        #[derive(Clone, Debug)]
+        struct InvitationDispatcher;
+
+        impl EmailDispatcher for InvitationDispatcher {
+            fn send(&self, _: String, _: String) -> () {}
+        }
+
+        let manager =
+            UsersManager::<InvitationDispatcher>::new(&get_db_environment());
         let chain = manager.get_users_router();
     }
 

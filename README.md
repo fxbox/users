@@ -48,26 +48,30 @@ $ multirust override nightly-2016-05-07
 extern crate foxbox_users;
 extern crate iron;
 
-use foxbox_users::UsersManager;
+use foxbox_users::{ EmailDispatcher, UsersManager };
 use iron::prelude::*;
 
 fn main() {
-    // Invitation email dispatcher
-    fn dispatcher(email: String, path: String) -> () {
-      // You are supposed to send an email here.
-      println!("This is a dummy email dispatcher callback {}", path);
-    };
-    let manager = UsersManager::new("sqlite_db.sqlite");
-    let manager = Arc::new(RwLock::new(manager));
-    let cloned = manager.clone();
-    thread::spawn(move || {
-        println!("Adding invitation dispatcher");
-        thread::sleep(Duration::from_millis(3000));
-        let mut guard = cloned.write().unwrap();
-        guard.set_invitation_dispatcher(dispatcher);
-    });
-    Iron::new(manager.write().unwrap().get_users_router())
-      .http("localhost:3000").unwrap();
+    #[derive(Clone, Debug)]
+    struct InvitationDispatcher;
+
+    impl InvitationDispatcher {
+        fn new() -> Self {
+            println!("YA");
+            InvitationDispatcher {}
+        }
+    }
+
+    impl EmailDispatcher for InvitationDispatcher {
+        fn send(&self, email: String, data: String) -> () {
+            // You are supposed to send a invitation email here.
+            println!("DISPATCH {} {}", email, data);
+        }
+    }
+
+    let mut manager = UsersManager::new("sqlite_db.sqlite");
+    manager.set_invitation_dispatcher(InvitationDispatcher::new());
+    Iron::new(manager.get_users_router()).http("localhost:3000").unwrap();
 }
 ```
 

@@ -9,22 +9,20 @@ use iron::method::Method;
 use iron::prelude::*;
 use iron::response::ResponseBody;
 use rustc_serialize::json::{ self, DecodeResult };
+use std::fmt::Debug;
 use std::sync::{ Arc, RwLock };
 
-/// Pointer to a function responsible for sending a invitation email.
-/// The function will be given the user's email address and a string
-/// containing the endpoint path required to activate a new user
-/// (i.e.: "/v1/users/12312313/activate?auth=avalidauthtoken")
-pub type InvitationDispatcher =
-    fn(user_email: String, user_activation_endpoint: String) -> ();
+pub trait EmailDispatcher : Clone + Debug + Send + Sync + 'static {
+    fn send(&self, email: String, data: String) -> ();
+}
 
 #[derive(Clone)]
-pub struct InvitationMiddleware {
-    invitation_dispatcher: Arc<RwLock<Option<InvitationDispatcher>>>,
+pub struct InvitationMiddleware<T>{
+    invitation_dispatcher: Arc<RwLock<Option<T>>>,
     version: String
 }
 
-impl InvitationMiddleware {
+impl<T: EmailDispatcher> InvitationMiddleware<T> {
     pub fn new(version: String) -> Self {
         InvitationMiddleware {
             invitation_dispatcher: Arc::new(RwLock::new(None)),
@@ -33,13 +31,14 @@ impl InvitationMiddleware {
     }
 
     pub fn set_invitation_dispatcher(&mut self,
-                                     dispatcher: InvitationDispatcher) {
+                                     dispatcher: T) {
         let mut guard = self.invitation_dispatcher.write().unwrap();
         *guard = Some(dispatcher);
+        println!("{:?}", *guard);
     }
 }
 
-impl AfterMiddleware for InvitationMiddleware {
+impl<T: EmailDispatcher> AfterMiddleware for InvitationMiddleware<T> {
     fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
         if req.method != Method::Post ||
@@ -60,8 +59,8 @@ impl AfterMiddleware for InvitationMiddleware {
         match payload {
             Ok(payload) => {
                 let guard = self.invitation_dispatcher.read().unwrap();
-                if let Some(dispatcher) = *guard {
-                    dispatcher(payload.email, payload.activation_url);
+                if let Some(ref dispatcher) = *guard {
+                    dispatcher.send(payload.email, payload.activation_url);
                 };
                 Ok(res)
             },
