@@ -305,15 +305,9 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::{ EmailDispatcher, UsersManager, UserBuilder,
-    ///                       ReadFilter };
+    /// # use foxbox_users::{ ReadFilter, UsersManager, UserBuilder };
     ///
-    /// #[derive(Clone, Debug)]
-    /// struct InvitationDispatcher;
-    /// impl EmailDispatcher for InvitationDispatcher {
-    ///     fn send(&self, _: String, _: String) -> () {}
-    /// }
-    /// let manager = UsersManager::<InvitationDispatcher>::new("UsersDb_clear_0.sqlite");
+    /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
     /// let db = manager.get_db();
     /// # db.create(&UserBuilder::new(None).name(String::from("John Doe")).finalize().unwrap());
     /// db.clear();
@@ -333,15 +327,10 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::{ EmailDispatcher, UsersManager, UserBuilder };
+    /// # use foxbox_users::{ UsersManager, UserBuilder };
     ///
-    /// #[derive(Clone, Debug)]
-    /// struct InvitationDispatcher;
-    /// impl EmailDispatcher for InvitationDispatcher {
-    ///     fn send(&self, _: String, _: String) -> () {}
-    /// }
     /// let admin = UserBuilder::new(None).name(String::from("admin")).admin(true).finalize().unwrap();
-    /// let manager = UsersManager::<InvitationDispatcher>::new("UsersDb_create_0.sqlite");
+    /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
     /// let db = manager.get_db();
     /// assert!(db.create(&admin).is_ok());
     /// ```
@@ -370,14 +359,9 @@ impl UsersDb {
     /// For instance, to get all users:
     ///
     /// ```no_run
-    /// # use foxbox_users::{ EmailDispatcher, UsersManager, User, ReadFilter };
+    /// # use foxbox_users::{ ReadFilter, User, UsersManager };
     ///
-    /// #[derive(Clone, Debug)]
-    /// struct InvitationDispatcher;
-    /// impl EmailDispatcher for InvitationDispatcher {
-    ///     fn send(&self, _: String, _: String) -> () {}
-    /// }
-    /// let manager = UsersManager::<InvitationDispatcher>::new("UsersDb_read_0.sqlite");
+   /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
     /// let db = manager.get_db();
     /// let all_users: Vec<User> = db.read(ReadFilter::All).unwrap();
     /// ```
@@ -385,14 +369,9 @@ impl UsersDb {
     /// And to quickly find administrators:
     ///
     /// ```no_run
-    /// # use foxbox_users::{ EmailDispatcher, UsersManager, User, ReadFilter };
+    /// # use foxbox_users::{ ReadFilter, User, UsersManager};
     ///
-    /// #[derive(Clone, Debug)]
-    /// struct InvitationDispatcher;
-    /// impl EmailDispatcher for InvitationDispatcher {
-    ///     fn send(&self, _: String, _: String) -> () {}
-    /// }
-    /// let manager = UsersManager::<InvitationDispatcher>::new("UsersDb_read_1.sqlite");
+    /// let manager = UsersManager::new("UsersDb_read_1.sqlite");
     /// let db = manager.get_db();
     /// let admins: Vec<User> = db.read(ReadFilter::IsAdmin(true)).unwrap();
     /// ```

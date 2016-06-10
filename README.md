@@ -52,26 +52,10 @@ use foxbox_users::{ EmailDispatcher, UsersManager };
 use iron::prelude::*;
 
 fn main() {
-    #[derive(Clone, Debug)]
-    struct InvitationDispatcher;
-
-    impl InvitationDispatcher {
-        fn new() -> Self {
-            println!("YA");
-            InvitationDispatcher {}
-        }
-    }
-
-    impl EmailDispatcher for InvitationDispatcher {
-        fn send(&self, email: String, data: String) -> () {
-            // You are supposed to send a invitation email here.
-            println!("DISPATCH {} {}", email, data);
-        }
-    }
-
     let mut manager = UsersManager::new("sqlite_db.sqlite");
-    manager.set_invitation_dispatcher(InvitationDispatcher::new());
-    Iron::new(manager.get_users_router()).http("localhost:3000").unwrap();
+    manager.setup_invitation_middleware("http://knilxof.org:4000".to_owned(),
+                                        "https://remote.whatever.knilxof.org".to_owned());
+    Iron::new(manager.get_router_chain()).http("localhost:3000").unwrap();
 }
 ```
 

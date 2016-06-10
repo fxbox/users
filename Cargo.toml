@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Puente González <salva@unoyunodiez.com"]
 
 [dependencies]
+hyper = "0.8.1"
 iron = "0.3"
 iron-cors = { git = "https://github.com/fxbox/iron-cors.git", rev = "f397cd2" }
 jwt = "0.4.0"

@@ -161,16 +161,11 @@ impl<H: Handler> Handler for AuthHandler<H> {
 /// extern crate foxbox_users;
 ///
 /// fn main() {
-///     use foxbox_users::{ EmailDispatcher, UsersManager };
+///     use foxbox_users::UsersManager;
 ///     use iron::prelude::{Chain, Iron};
 ///
-///     #[derive(Clone, Debug)]
-///     struct InvitationDispatcher;
-///     impl EmailDispatcher for InvitationDispatcher {
-///         fn send(&self, _: String, _: String) -> () {}
-///     }
-///     let manager = UsersManager::<InvitationDispatcher>::new("AuthMiddleware_0.sqlite");
-///     let mut chain = Chain::new(manager.get_users_router());
+///     let manager = UsersManager::new("AuthMiddleware_0.sqlite");
+///     let mut chain = Chain::new(manager.get_router_chain());
 ///     chain.around(manager.get_middleware(vec![]));
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
@@ -289,7 +284,6 @@ impl AuthMiddleware {
 #[cfg(test)]
 describe! auth_middleware_tests {
     before_each {
-        use EmailDispatcher;
         use iron::headers::Headers;
         use iron::prelude::*;
         use iron::method::Method;
@@ -299,15 +293,7 @@ describe! auth_middleware_tests {
         use users_db::get_db_environment;
         use UsersManager;
 
-        #[derive(Clone, Debug)]
-        struct InvitationDispatcher;
-
-        impl EmailDispatcher for InvitationDispatcher {
-            fn send(&self, _: String, _: String) -> () {}
-        }
-
-        let manager =
-            UsersManager::<InvitationDispatcher>::new(&get_db_environment());
+        let manager = UsersManager::new(&get_db_environment());
         fn not_implemented(_: &mut Request) -> IronResult<Response> {
             Ok(Response::with(Status::NotImplemented))
         }

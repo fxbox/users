@@ -4,45 +4,100 @@
 
 use super::users_router::CreateUserResponse;
 
+use hyper::Client;
+use hyper::header::{ Connection, ContentType, Headers };
+use hyper::mime::{ Attr, Mime, TopLevel, SubLevel, Value };
 use iron::AfterMiddleware;
 use iron::method::Method;
 use iron::prelude::*;
 use iron::response::ResponseBody;
 use rustc_serialize::json::{ self, DecodeResult };
-use std::fmt::Debug;
-use std::sync::{ Arc, RwLock };
 
-pub trait EmailDispatcher : Clone + Debug + Send + Sync + 'static {
-    fn send(&self, email: String, data: String) -> ();
+#[derive(Debug, RustcEncodable)]
+struct InvitationRequest {
+    email: String,
+    url: String
 }
 
-#[derive(Clone)]
-pub struct InvitationMiddleware<T>{
-    invitation_dispatcher: Arc<RwLock<Option<T>>>,
+#[derive(Clone, Debug)]
+pub struct InvitationMiddleware{
+    email_server: Option<String>,
+    invitation_url_prepath: Option<String>,
     version: String
 }
 
-impl<T: EmailDispatcher> InvitationMiddleware<T> {
+impl InvitationMiddleware {
     pub fn new(version: String) -> Self {
         InvitationMiddleware {
-            invitation_dispatcher: Arc::new(RwLock::new(None)),
+            email_server: None,
+            invitation_url_prepath: None,
             version: version
         }
     }
 
-    pub fn set_invitation_dispatcher(&mut self,
-                                     dispatcher: T) {
-        let mut guard = self.invitation_dispatcher.write().unwrap();
-        *guard = Some(dispatcher);
-        println!("{:?}", *guard);
+    pub fn setup(&mut self, email_server: String,
+                 invitation_url_prepath: String) {
+        self.email_server = Some(email_server);
+        self.invitation_url_prepath = Some(invitation_url_prepath);
+    }
+
+    pub fn send(&self, user_email: String, activation_url: String) {
+        let invitation_url_prepath = match self.invitation_url_prepath {
+            Some(ref prepath) => prepath,
+            None => {
+                println!("Invitation middleware needs setup");
+                return;
+            }
+        };
+
+        let email_server = match self.email_server {
+            Some(ref url) => url,
+            None => {
+                println!("Invitation middleware needs setup");
+                return;
+            }
+        };
+
+        let body = match json::encode(&InvitationRequest {
+            email: user_email.clone(),
+            url: format!("{}{}", invitation_url_prepath, activation_url)
+        }) {
+            Ok(body) => body,
+            Err(_) => {
+                println!("Could not send invitation email.");
+                return;
+            }
+        };
+
+        let client = Client::new();
+        let endpoint = format!("{}/v1/invitation", email_server);
+        let mut headers = Headers::new();
+        headers.set(
+            ContentType(Mime(TopLevel::Application, SubLevel::Json,
+                             vec![(Attr::Charset, Value::Utf8)]))
+        );
+        headers.set(Connection::close());
+        let res = client.post(&endpoint)
+              .headers(headers)
+              .body(&body)
+              .send();
+
+        if let Err(_) = res {
+            println!("Unable to send invitation to {}", user_email);
+        }
     }
 }
 
-impl<T: EmailDispatcher> AfterMiddleware for InvitationMiddleware<T> {
+impl AfterMiddleware for InvitationMiddleware {
     fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
         if req.method != Method::Post ||
            req.url.path != vec![self.version.clone(), "users".to_owned()] {
+            return Ok(res);
+        }
+
+        if self.email_server == None || self.invitation_url_prepath == None {
+            println!("Invitation middleware requires previous setup");
             return Ok(res);
         }
 
@@ -58,10 +113,7 @@ impl<T: EmailDispatcher> AfterMiddleware for InvitationMiddleware<T> {
         let payload: DecodeResult<CreateUserResponse> = json::decode(&payload);
         match payload {
             Ok(payload) => {
-                let guard = self.invitation_dispatcher.read().unwrap();
-                if let Some(ref dispatcher) = *guard {
-                    dispatcher.send(payload.email, payload.activation_url);
-                };
+                self.send(payload.email, payload.activation_url);
                 Ok(res)
             },
             Err(_) => Ok(res)
