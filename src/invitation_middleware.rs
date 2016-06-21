@@ -5,8 +5,7 @@
 use super::users_router::CreateUserResponse;
 
 use hyper::Client;
-use hyper::header::{ Connection, ContentType, Headers };
-use hyper::mime::{ Attr, Mime, TopLevel, SubLevel, Value };
+use hyper::header::{ Connection, Headers };
 use iron::AfterMiddleware;
 use iron::method::Method;
 use iron::prelude::*;
@@ -27,21 +26,21 @@ pub struct InvitationMiddleware{
 }
 
 impl InvitationMiddleware {
-    pub fn new(version: String) -> Self {
+    pub fn new(version: &str) -> Self {
         InvitationMiddleware {
             email_server: None,
             invitation_url_prepath: None,
-            version: version
+            version: version.to_owned()
         }
     }
 
-    pub fn setup(&mut self, email_server: String,
-                 invitation_url_prepath: String) {
-        self.email_server = Some(email_server);
-        self.invitation_url_prepath = Some(invitation_url_prepath);
+    pub fn setup(&mut self, email_server: &str,
+                 invitation_url_prepath: &str) {
+        self.email_server = Some(email_server.to_owned());
+        self.invitation_url_prepath = Some(invitation_url_prepath.to_owned());
     }
 
-    pub fn send(&self, user_email: String, activation_url: String) {
+    pub fn send(&self, user_email: &str, activation_url: &str) {
         let invitation_url_prepath = match self.invitation_url_prepath {
             Some(ref prepath) => prepath,
             None => {
@@ -59,7 +58,7 @@ impl InvitationMiddleware {
         };
 
         let body = match json::encode(&InvitationRequest {
-            email: user_email.clone(),
+            email: user_email.to_owned(),
             url: format!("{}{}", invitation_url_prepath, activation_url)
         }) {
             Ok(body) => body,
@@ -72,10 +71,6 @@ impl InvitationMiddleware {
         let client = Client::new();
         let endpoint = format!("{}/v1/invitation", email_server);
         let mut headers = Headers::new();
-        headers.set(
-            ContentType(Mime(TopLevel::Application, SubLevel::Json,
-                             vec![(Attr::Charset, Value::Utf8)]))
-        );
         headers.set(Connection::close());
         let res = client.post(&endpoint)
               .headers(headers)
@@ -113,7 +108,7 @@ impl AfterMiddleware for InvitationMiddleware {
         let payload: DecodeResult<CreateUserResponse> = json::decode(&payload);
         match payload {
             Ok(payload) => {
-                self.send(payload.email, payload.activation_url);
+                self.send(&payload.email, &payload.activation_url);
                 Ok(res)
             },
             Err(_) => Ok(res)

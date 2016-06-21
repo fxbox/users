@@ -595,7 +595,7 @@ impl UsersRouter {
         UsersRouter {
             db_path: db_path.to_owned(),
             invitation_middleware: Arc::new(
-                RwLock::new(InvitationMiddleware::new(String::from(API_VERSION)))
+                RwLock::new(InvitationMiddleware::new(API_VERSION))
             )
         }
     }
@@ -679,8 +679,8 @@ impl UsersRouter {
     }
 
     pub fn setup_invitation_middleware(&mut self,
-                                       email_server: String,
-                                       invitation_url_prepath: String) {
+                                       email_server: &str,
+                                       invitation_url_prepath: &str) {
         let mut guard = self.invitation_middleware.write().unwrap();
         guard.setup(email_server, invitation_url_prepath);
     }

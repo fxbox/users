@@ -74,8 +74,8 @@ impl UsersManager {
     /// https://github.com/fxbox/users-email-server
     /// and the URL prepath to be appended to the user activation endpoints.
     pub fn setup_invitation_middleware(&mut self,
-                                       email_server: String,
-                                       invitation_url_prepath: String) {
+                                       email_server: &str,
+                                       invitation_url_prepath: &str) {
         self.router.setup_invitation_middleware(email_server,
                                                 invitation_url_prepath);
     }
