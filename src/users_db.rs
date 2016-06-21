@@ -305,7 +305,8 @@ impl UsersDb {
     /// # Examples
     ///
     /// ```no_run
-    /// # use foxbox_users::{ UsersManager, UserBuilder, ReadFilter };
+    /// # use foxbox_users::{ ReadFilter, UsersManager, UserBuilder };
+    ///
     /// let manager = UsersManager::new("UsersDb_clear_0.sqlite");
     /// let db = manager.get_db();
     /// # db.create(&UserBuilder::new(None).name(String::from("John Doe")).finalize().unwrap());
@@ -327,6 +328,7 @@ impl UsersDb {
     ///
     /// ```no_run
     /// # use foxbox_users::{ UsersManager, UserBuilder };
+    ///
     /// let admin = UserBuilder::new(None).name(String::from("admin")).admin(true).finalize().unwrap();
     /// let manager = UsersManager::new("UsersDb_create_0.sqlite");
     /// let db = manager.get_db();
@@ -357,8 +359,9 @@ impl UsersDb {
     /// For instance, to get all users:
     ///
     /// ```no_run
-    /// # use foxbox_users::{ UsersManager, User, ReadFilter };
-    /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
+    /// # use foxbox_users::{ ReadFilter, User, UsersManager };
+    ///
+   /// let manager = UsersManager::new("UsersDb_read_0.sqlite");
     /// let db = manager.get_db();
     /// let all_users: Vec<User> = db.read(ReadFilter::All).unwrap();
     /// ```
@@ -366,7 +369,8 @@ impl UsersDb {
     /// And to quickly find administrators:
     ///
     /// ```no_run
-    /// # use foxbox_users::{ UsersManager, User, ReadFilter };
+    /// # use foxbox_users::{ ReadFilter, User, UsersManager};
+    ///
     /// let manager = UsersManager::new("UsersDb_read_1.sqlite");
     /// let db = manager.get_db();
     /// let admins: Vec<User> = db.read(ReadFilter::IsAdmin(true)).unwrap();

@@ -15,6 +15,7 @@ extern crate iron_test;
 extern crate url;
 
 extern crate crypto;
+extern crate hyper;
 extern crate iron;
 extern crate iron_cors;
 extern crate jwt;
@@ -27,10 +28,11 @@ extern crate unicase;
 extern crate urlencoded;
 extern crate uuid;
 
-mod users_db;
-mod users_router;
 mod auth_middleware;
 mod errors;
+mod invitation_middleware;
+mod users_db;
+mod users_router;
 
 pub use users_db::UsersDb as UsersDb;
 pub use users_db::UserBuilder as UserBuilder;
@@ -44,14 +46,17 @@ pub use auth_middleware::SessionToken as SessionToken;
 
 pub struct UsersManager {
     db_file_path: String,
+    router: UsersRouter
 }
 
 impl UsersManager {
-
-    /// Create the UsersManager. The database will be stored at
-    /// `db_file_path`.
-    pub fn new(db_file_path: &str) -> Self {
-        UsersManager { db_file_path: String::from(db_file_path) }
+    /// Create the UsersManager.
+    /// The database will be stored at `db_file_path`.
+    pub fn new(db_file_path: &str)-> Self {
+        UsersManager {
+            db_file_path: String::from(db_file_path),
+            router: UsersRouter::new(db_file_path)
+        }
     }
 
     /// Get a new database connection.
@@ -59,9 +64,20 @@ impl UsersManager {
         UsersDb::new(&self.db_file_path)
     }
 
-    /// Get a new router chain
+    /// Get Iron chain containing the Users HTTP API routes.
     pub fn get_router_chain(&self) -> iron::middleware::Chain {
-        UsersRouter::init(&self.db_file_path)
+        self.router.init()
+    }
+
+    /// Allow the consumer to setup the invitation middleware specifying
+    /// the url of the email server that should be an instance of
+    /// https://github.com/fxbox/users-email-server
+    /// and the URL prepath to be appended to the user activation endpoints.
+    pub fn setup_invitation_middleware(&mut self,
+                                       email_server: &str,
+                                       invitation_url_prepath: &str) {
+        self.router.setup_invitation_middleware(email_server,
+                                                invitation_url_prepath);
     }
 
     pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)

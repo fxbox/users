@@ -48,13 +48,14 @@ $ multirust override nightly-2016-05-07
 extern crate foxbox_users;
 extern crate iron;
 
-use foxbox_users::UsersManager;
+use foxbox_users::{ EmailDispatcher, UsersManager };
 use iron::prelude::*;
 
 fn main() {
-    let manager = UsersManager::new("sqlite_db.sqlite");
-    let router = manager.get_router_chain();
-    Iron::new(router).http("localhost:3000").unwrap();
+    let mut manager = UsersManager::new("sqlite_db.sqlite");
+    manager.setup_invitation_middleware("http://knilxof.org:4000".to_owned(),
+                                        "https://remote.whatever.knilxof.org".to_owned());
+    Iron::new(manager.get_router_chain()).http("localhost:3000").unwrap();
 }
 ```
 

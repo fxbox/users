@@ -12,8 +12,9 @@
 //! can be found in the GitHub repository.
 
 use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
-use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 use super::errors::*;
+use super::invitation_middleware::InvitationMiddleware;
+use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
 
 use iron::status;
 use iron::headers::{ Authorization, Basic };
@@ -24,6 +25,7 @@ use router::Router;
 use rustc_serialize::json;
 
 use std::io::Read;
+use std::sync::{ Arc, RwLock };
 
 type Credentials = (String, String);
 
@@ -61,8 +63,9 @@ impl SessionTokenResponse {
 
 /// Body response for POST /users
 #[derive(Debug, RustcDecodable, RustcEncodable)]
-struct CreateUserResponse {
-    activation_url: String
+pub struct CreateUserResponse {
+    pub email: String,
+    pub activation_url: String
 }
 
 /// Body response for GET /users/:id
@@ -127,14 +130,16 @@ macro_rules! parse_request_body {
 ///     use iron::prelude::{ Chain, Iron };
 ///
 ///     let manager = UsersManager::new("UsersRouter_0.sqlite");
-///     let router = manager.get_router_chain();
-///     let mut chain = Chain::new(router);
+///     let mut chain = Chain::new(manager.get_router_chain());
 /// # if false {
 ///     Iron::new(chain).http("localhost:3000").unwrap();
 /// # }
 /// }
 /// ```
-pub struct UsersRouter;
+pub struct UsersRouter {
+    db_path: String,
+    invitation_middleware: Arc<RwLock<InvitationMiddleware>>
+}
 
 impl UsersRouter {
     /// POST /setup handler.
@@ -240,7 +245,8 @@ impl UsersRouter {
     ///
     /// XXX Once we have a permissions system, this functionality will require
     /// admin permissions.
-    pub fn create_user(req: &mut Request, db_path: &str)
+    pub fn create_user(req: &mut Request,
+                       db_path: &str)
         -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct CreateUserBody {
@@ -250,7 +256,7 @@ impl UsersRouter {
         let body: CreateUserBody = parse_request_body!(req);
 
         let user = match UserBuilder::new(None)
-            .email(body.email)
+            .email(body.email.clone())
             .finalize() {
                 Ok(user) => user,
                 Err(user_with_error) => {
@@ -273,13 +279,14 @@ impl UsersRouter {
                 };
 
                 let activation_url = endpoint(
-                    &format!("/users/{}?auth={}",user.id, session_token)
+                    &format!("/users/{}/activate?auth={}",user.id, session_token)
                 );
 
                 // To help testing, we print the url here.
                 println!("New user: activation url {}", activation_url);
 
-                let body = match json::encode(&CreateUserResponse{
+                let body = match json::encode(&CreateUserResponse {
+                    email: body.email,
                     activation_url: activation_url
                 }) {
                     Ok(body) => body,
@@ -496,7 +503,7 @@ impl UsersRouter {
                     }
                 };
                 match db.update(&user) {
-                    Ok(_) => Ok(Response::with((status::NoContent))),
+                    Ok(_) => SessionTokenResponse::with_user(&user),
                     Err(error) => {
                         println!("{:?}", error);
                         from_sqlite_error(error)
@@ -584,66 +591,75 @@ impl UsersRouter {
         }
     }
 
-    /// Creates the Iron user router middleware.
-    pub fn init(db_path: &str) -> super::iron::middleware::Chain {
+    pub fn new(db_path: &str) -> Self {
+        UsersRouter {
+            db_path: db_path.to_owned(),
+            invitation_middleware: Arc::new(
+                RwLock::new(InvitationMiddleware::new(API_VERSION))
+            )
+        }
+    }
+
+    pub fn init(&self) -> super::iron::middleware::Chain {
         let mut router = Router::new();
 
         // Setup.
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.post(endpoint("/setup"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::setup(req, &data)
         });
 
         // Login.
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.post(endpoint("/login"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::login(req, &data)
         });
 
         // User management.
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::create_user(req, &data)
         });
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.get(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::get_user(req, &data)
         });
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.get(endpoint("/users"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::get_all_users(req, &data)
         });
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.put(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::edit_user(req, &data)
         });
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.put(endpoint("/users/:id/activate"),
                    move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::activate_user(req, &data)
         });
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         router.delete(endpoint("/users/:id"),
                       move |req: &mut Request| -> IronResult<Response> {
             UsersRouter::delete_user(req, &data)
         });
 
         let cors = CORS::new(vec![
-            (vec![Method::Post], endpoint("/login"))
+            (vec![Method::Post], endpoint("/login")),
+            (vec![Method::Put], endpoint("/users/:id/activate"))
         ]);
 
-        let data = String::from(db_path);
+        let data = self.db_path.clone();
         let auth_middleware = AuthMiddleware::new(vec![
             AuthEndpoint(vec![Method::Post, Method::Get],
                          endpoint("/users")),
@@ -653,11 +669,20 @@ impl UsersRouter {
                          endpoint("/users/:id/activate")),
         ], data);
 
+        let guard = self.invitation_middleware.write().unwrap();
         let mut chain = Chain::new(router);
-        chain.link_after(cors);
         chain.link_around(auth_middleware);
+        chain.link_after(cors);
+        chain.link_after(guard.clone());
 
         chain
+    }
+
+    pub fn setup_invitation_middleware(&mut self,
+                                       email_server: &str,
+                                       invitation_url_prepath: &str) {
+        let mut guard = self.invitation_middleware.write().unwrap();
+        guard.setup(email_server, invitation_url_prepath);
     }
 }
 
@@ -700,7 +725,7 @@ describe! users_router_tests {
         }
 
         let manager = UsersManager::new(&get_db_environment());
-        let router = manager.get_router_chain();
+        let chain = manager.get_router_chain();
     }
 
     describe! cors_tests {
@@ -709,13 +734,14 @@ describe! users_router_tests {
             use iron::method::Method;
 
             let endpoints = vec![
-                (vec![Method::Post], format!("{}/login", API_VERSION))
+                (vec![Method::Post], format!("{}/login", API_VERSION)),
+                (vec![Method::Put], format!("{}/users/:id/activate", API_VERSION))
             ];
             for endpoint in endpoints.clone() {
                 let (_, path) = endpoint;
                 let path = format!("http://localhost:3000/{}",
                                    &(path.replace(":", "foo")));
-                match request::options(&path, Headers::new(), &router) {
+                match request::options(&path, Headers::new(), &chain) {
                     Ok(res) => {
                         let headers = &res.headers;
                         assert!(headers.has::<headers::AccessControlAllowOrigin>());
@@ -734,7 +760,7 @@ describe! users_router_tests {
                                          &endpoint("/login")),
                                 Headers::new(),
                                 "{}",
-                                &router) {
+                                &chain) {
                 Ok(_) => {
                     assert!(false)
                 },
@@ -752,7 +778,7 @@ describe! users_router_tests {
             match request::options(&format!("http://localhost:3000{}",
                                             &endpoint("/setup")),
                                    Headers::new(),
-                                   &router) {
+                                   &chain) {
                 Ok(res) => {
                     let headers = &res.headers;
                     assert!(!headers.has::<headers::AccessControlAllowOrigin>());
@@ -780,7 +806,7 @@ describe! users_router_tests {
                                 "{\"name\": \"name\",
                                   \"email\": \"username@domain.com\",
                                   \"password\": \"password\"}",
-                                &router) {
+                                &chain) {
                 Ok(res) => {
                     assert_eq!(res.status.unwrap(), Status::Created);
                     let body_obj = extract_body_to::<SessionTokenResponse>(res).unwrap();
@@ -802,7 +828,7 @@ describe! users_router_tests {
                          \"password\": \"password\"}";
 
             if let Ok(res) = request::post(endpoint, Headers::new(), body,
-                                           &router) {
+                                           &chain) {
                 assert_eq!(res.status.unwrap(), Status::Created);
                 let admins = usersDb.read(ReadFilter::IsAdmin(true)).unwrap();
                 assert_eq!(admins.len(), 1);
@@ -824,7 +850,7 @@ describe! users_router_tests {
                                 "{\"name\": \"u\",
                                   \"email\": \"u@d\",
                                   \"password\": \"12345678\"}",
-                                &router) {
+                                &chain) {
                 Ok(_) => {
                     assert!(false);
                 },
@@ -844,7 +870,7 @@ describe! users_router_tests {
             match request::post(endpoint, Headers::new(),
                                 "{\"email\": \"u@d\",
                                   \"password\": \"12345678\"}",
-                                &router) {
+                                &chain) {
                 Ok(_) => {
                     assert!(false);
                 },
@@ -863,7 +889,7 @@ describe! users_router_tests {
            match request::post(endpoint, Headers::new(),
                                 "{\"name\": \"u\",
                                   \"password\": \"12345678\"}",
-                                &router) {
+                                &chain) {
                 Ok(_) => {
                     assert!(false);
                 },
@@ -882,7 +908,7 @@ describe! users_router_tests {
             match request::post(endpoint, Headers::new(),
                                 "{\"name\": \"u\",
                                   \"email\": \"u@d\"}",
-                                &router) {
+                                &chain) {
                 Ok(_) => {
                     assert!(false);
                 },
@@ -929,7 +955,7 @@ describe! users_router_tests {
             let mut headers = Headers::new();
             headers.set(invalid_credentials);
 
-            if let Err(error) = request::post(endpoint, headers, "", &router) {
+            if let Err(error) = request::post(endpoint, headers, "", &chain) {
                 let response = error.response;
                 assert!(response.status.is_some());
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
@@ -949,7 +975,7 @@ describe! users_router_tests {
             let mut headers = Headers::new();
             headers.set(invalid_credentials);
 
-            if let Err(error) = request::post(endpoint, headers, "", &router) {
+            if let Err(error) = request::post(endpoint, headers, "", &chain) {
                 let response = error.response;
                 assert!(response.status.is_some());
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
@@ -964,7 +990,7 @@ describe! users_router_tests {
             authorization password" {
             let headers = Headers::new();
 
-            if let Err(error) = request::post(endpoint, headers, "", &router) {
+            if let Err(error) = request::post(endpoint, headers, "", &chain) {
                 let response = error.response;
                 assert!(response.status.is_some());
                 assert_eq!(response.status.unwrap(), Status::BadRequest);
@@ -983,7 +1009,7 @@ describe! users_router_tests {
             let mut headers = Headers::new();
             headers.set(invalid_credentials);
 
-            if let Err(error) = request::post(endpoint, headers, "", &router) {
+            if let Err(error) = request::post(endpoint, headers, "", &chain) {
                 let response = error.response;
                 assert!(response.status.is_some());
                 assert_eq!(response.status.unwrap(), Status::Unauthorized);
@@ -1000,7 +1026,7 @@ describe! users_router_tests {
             let mut headers = Headers::new();
             headers.set(invalid_credentials);
 
-            if let Err(error) = request::post(endpoint, headers, "", &router) {
+            if let Err(error) = request::post(endpoint, headers, "", &chain) {
                 let response = error.response;
                 assert!(response.status.is_some());
                 assert_eq!(response.status.unwrap(), Status::Unauthorized);
@@ -1025,7 +1051,7 @@ describe! users_router_tests {
             });
             let mut headers = Headers::new();
             headers.set(valid_credentials);
-            match request::post(endpoint, headers, "", &router) {
+            match request::post(endpoint, headers, "", &chain) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Created);
@@ -1080,7 +1106,7 @@ describe! users_router_tests {
         it "should not allow the creation of a new user to non authenticated
             requests" {
             match request::post(create_user_endpoint, Headers::new(), "",
-                                &router) {
+                                &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1092,7 +1118,7 @@ describe! users_router_tests {
 
         it "should not allow the creation of a new user without email" {
             match request::post(create_user_endpoint, headers, "{}",
-                                &router) {
+                                &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1107,7 +1133,7 @@ describe! users_router_tests {
         it "should not allow the creation of a new user with malformed email" {
             match request::post(create_user_endpoint, headers,
                                 "{\"email\": \"malformedemail\"}",
-                                &router) {
+                                &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1122,7 +1148,7 @@ describe! users_router_tests {
         it "should allow the creation of a new user" {
             match request::post(create_user_endpoint, headers,
                                 "{\"email\": \"user@domain.org\"}",
-                                &router) {
+                                &chain) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Created);
@@ -1185,7 +1211,7 @@ describe! users_router_tests {
             let unknown_id = 111;
             let endpoint = &format!("http://localhost:3000{}",
                                 endpoint(&format!("/users/{}", unknown_id)));
-            match request::get(endpoint, headers, &router) {
+            match request::get(endpoint, headers, &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1204,7 +1230,7 @@ describe! users_router_tests {
             let user = usersDb.create(&inactive_user).unwrap();
             let endpoint = &format!("http://localhost:3000{}",
                                 endpoint(&format!("/users/{}", user.id)));
-            match request::get(endpoint, Headers::new(), &router) {
+            match request::get(endpoint, Headers::new(), &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1223,7 +1249,7 @@ describe! users_router_tests {
             let user = usersDb.create(&inactive_user).unwrap();
             let endpoint = &format!("http://localhost:3000{}",
                                 endpoint(&format!("/users/{}", user.id)));
-            match request::get(endpoint, headers, &router) {
+            match request::get(endpoint, headers, &chain) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Ok);
@@ -1280,7 +1306,7 @@ describe! users_router_tests {
         }
 
         it "should not allow to get user list to non authenticated requests" {
-            match request::get(get_users_endpoint, Headers::new(), &router) {
+            match request::get(get_users_endpoint, Headers::new(), &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1291,7 +1317,7 @@ describe! users_router_tests {
         }
 
         it "should return 200 OK with a list of one user" {
-            match request::get(get_users_endpoint, headers, &router) {
+            match request::get(get_users_endpoint, headers, &chain) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Ok);
@@ -1319,7 +1345,7 @@ describe! users_router_tests {
                        .secret(String::from("secret"))
                        .finalize().unwrap()).unwrap();
 
-            match request::get(get_users_endpoint, headers, &router) {
+            match request::get(get_users_endpoint, headers, &chain) {
                 Ok(response) => {
                     assert!(response.status.is_some());
                     assert_eq!(response.status.unwrap(), Status::Ok);
@@ -1389,7 +1415,7 @@ describe! users_router_tests {
             );
             match request::put(endpoint, Headers::new(),
                                "{\"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1408,7 +1434,7 @@ describe! users_router_tests {
             );
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1428,7 +1454,7 @@ describe! users_router_tests {
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1452,7 +1478,7 @@ describe! users_router_tests {
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1478,7 +1504,7 @@ describe! users_router_tests {
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1488,7 +1514,7 @@ describe! users_router_tests {
             };
         }
 
-        it "should return 204 NoContent activating a inactive user" {
+        it "should return 201 Created activating a inactive user" {
             let user = UserBuilder::new(None)
                        .email(String::from("username@example.com"))
                        .active(false)
@@ -1502,9 +1528,9 @@ describe! users_router_tests {
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(response) => {
-                    assert_eq!(response.status.unwrap(), Status::NoContent);
+                    assert_eq!(response.status.unwrap(), Status::Created);
                     match usersDb.read(ReadFilter::Id(user.id)) {
                         Ok(users) => {
                             assert_eq!(users[0].name, "name".to_owned());
@@ -1561,7 +1587,7 @@ describe! users_router_tests {
             match request::put(endpoint, Headers::new(),
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1577,7 +1603,7 @@ describe! users_router_tests {
             match request::put(endpoint, headers,
                                "{\"name\": \"name\",
                                  \"password\": \"12345678\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1605,7 +1631,7 @@ describe! users_router_tests {
                                "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
                                  \"is_admin\": true}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1630,7 +1656,7 @@ describe! users_router_tests {
             match request::put(endpoint, headers,
                                "{\"name\": \"name\",
                                  \"password\": \"123\"}",
-                               &router) {
+                               &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1656,7 +1682,7 @@ describe! users_router_tests {
                                "{\"name\": \"manolo\",
                                  \"password\": \"12345678\",
                                  \"is_admin\": true}",
-                               &router) {
+                               &chain) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
                     match usersDb.read(ReadFilter::Id(user.id)) {
@@ -1712,7 +1738,7 @@ describe! users_router_tests {
         it "should return 401 Unauthorized for invalid auth header" {
             let endpoint = &format!("http://localhost:3000{}",
                                     endpoint(&format!("/users/{}", 123)));
-            match request::delete(endpoint, Headers::new(), &router) {
+            match request::delete(endpoint, Headers::new(), &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1725,7 +1751,7 @@ describe! users_router_tests {
         it "should return 404 NotFound for unknown user id" {
             let endpoint = &format!("http://localhost:3000{}",
                                     endpoint(&format!("/users/{}", 123)));
-            match request::delete(endpoint, headers, &router) {
+            match request::delete(endpoint, headers, &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1738,7 +1764,7 @@ describe! users_router_tests {
         it "should return 423 Locked when trying to remove the last admin" {
             let endpoint = &format!("http://localhost:3000{}",
                             endpoint(&format!("/users/{}", user.id)));
-            match request::delete(endpoint, headers, &router) {
+            match request::delete(endpoint, headers, &chain) {
                 Ok(_) => assert!(false),
                 Err(error) => {
                     let response = error.response;
@@ -1758,7 +1784,7 @@ describe! users_router_tests {
 
             let endpoint = &format!("http://localhost:3000{}",
                             endpoint(&format!("/users/{}", user.id)));
-            match request::delete(endpoint, headers, &router) {
+            match request::delete(endpoint, headers, &chain) {
                 Ok(response) => {
                     assert_eq!(response.status.unwrap(), Status::NoContent);
                     match usersDb.read(ReadFilter::Id(user.id)) {
