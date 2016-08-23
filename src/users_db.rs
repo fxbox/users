@@ -380,7 +380,7 @@ impl UsersDb {
             self.connection.prepare("SELECT * FROM users")
         );
 
-        let rows = match filter {
+        let mut rows = match filter {
             ReadFilter::All => {
                 try!(stmt.query(&[]))
             },
@@ -412,7 +412,7 @@ impl UsersDb {
         };
 
         let mut users = Vec::new();
-        for result_row in rows {
+        while let Some(result_row) = rows.next() {
             let row = try!(result_row);
             let user = User {
                 id: row.get(0),
