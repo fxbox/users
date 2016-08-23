@@ -122,7 +122,7 @@ impl<H: Handler> Handler for AuthHandler<H> {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
         {
             let endpoint = AuthEndpoint(vec![req.method.clone()],
-                                        req.url.path.join("/"));
+                                        req.url.path().join("/"));
 
             let guard = self.auth_endpoints.read().unwrap();
 

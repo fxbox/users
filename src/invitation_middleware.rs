@@ -87,7 +87,7 @@ impl AfterMiddleware for InvitationMiddleware {
     fn after(&self, req: &mut Request, mut res: Response)
         -> IronResult<Response> {
         if req.method != Method::Post ||
-           req.url.path != vec![self.version.clone(), "users".to_owned()] {
+           req.url.path() != vec![self.version.clone(), "users".to_owned()] {
             return Ok(res);
         }
 
