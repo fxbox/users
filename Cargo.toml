@@ -4,22 +4,22 @@ version = "0.1.0"
 authors = ["Fernando Jiménez Moreno <ferjmoreno@gmail.com>", "Salvador de la Puente González <salva@unoyunodiez.com"]
 
 [dependencies]
-hyper = "0.8.1"
-iron = "0.3"
-iron-cors = { git = "https://github.com/fxbox/iron-cors.git", rev = "f397cd2" }
+hyper = "0.9.10"
+iron = "0.4"
+iron-cors = { git = "https://github.com/fabricedesre/iron-cors.git", branch = "rustup" }
 jwt = "0.4.0"
 libc = "0.2.7"
 pwhash = "0.1.1"
-router = "0.1.1"
+router = "0.2.0"
 rustc-serialize = "0.3.18"
 rusqlite = "0.6.0"
 rust-crypto = "0.2.34"
 unicase = "1.4.0"
-urlencoded = "0.3.0"
+urlencoded = "0.4.0"
 uuid = "0.2.2"
 
 [dev-dependencies]
-iron-test = "0.3.0"
+iron-test = "0.4.0"
 stainless = "0.1.4"
-clippy = "0.0.65"
-url="1.1.0"
+clippy = "0.0.85"
+url="1.2.0"
