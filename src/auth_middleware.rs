@@ -251,7 +251,7 @@ impl AuthMiddleware {
             },
             _ => {
                 match req.get_ref::<UrlEncodedQuery>() {
-                    Ok(ref params) => {
+                    Ok(params) => {
                         match params.get("auth") {
                             Some(token) => {
                                 Some(token[0].clone())
