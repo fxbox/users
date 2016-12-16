@@ -16,7 +16,7 @@ rusqlite = "0.7"
 rust-crypto = "0.2.34"
 unicase = "1.4.0"
 urlencoded = "0.4.0"
-uuid = "0.2.2"
+uuid = { version = "0.3", features = ["v4"] }
 
 [dev-dependencies]
 iron-test = "0.4.0"
