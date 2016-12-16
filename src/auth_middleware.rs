@@ -1,6 +1,6 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 //! A middleware for authenticating requests based on
 //! [JWT](https://jwt.io/introduction/).
@@ -21,7 +21,7 @@ use iron::{AroundMiddleware, Handler, headers, status};
 use iron::method::Method;
 use iron::prelude::*;
 use jwt::{self, Error, Header, Token};
-use std::sync::{ Arc, RwLock };
+use std::sync::{Arc, RwLock};
 use urlencoded::UrlEncodedQuery;
 
 /// Structure representing [JWT claims section](https://jwt.io/introduction/).
@@ -29,9 +29,9 @@ use urlencoded::UrlEncodedQuery;
 /// Claims made by the authentication protocol includes `id` and `email` with
 /// database unique id and email respectively.
 #[derive(Default, RustcDecodable, RustcEncodable)]
-pub struct SessionClaims{
+pub struct SessionClaims {
     pub id: String,
-    pub email: String
+    pub email: String,
 }
 
 /// Factory to create a session token `String` for a user in the database.
@@ -42,17 +42,13 @@ impl SessionToken {
         let jwt_header: jwt::Header = Default::default();
         let claims = SessionClaims {
             id: user.id.to_owned(),
-            email: user.email.to_owned()
+            email: user.email.to_owned(),
         };
         let token = jwt::Token::new(jwt_header, claims);
-        token.signed(
-            user.secret.to_owned().as_bytes(),
-            Sha256::new()
-        )
+        token.signed(user.secret.to_owned().as_bytes(), Sha256::new())
     }
 
-    pub fn from_string(token_str: &str)
-        -> Result<Token<Header, SessionClaims>, Error> {
+    pub fn from_string(token_str: &str) -> Result<Token<Header, SessionClaims>, Error> {
         Token::<Header, SessionClaims>::parse(token_str)
     }
 }
@@ -115,14 +111,13 @@ impl PartialEq for AuthEndpoint {
 struct AuthHandler<H: Handler> {
     handler: H,
     auth_db_file: String,
-    auth_endpoints: Arc<RwLock<Vec<AuthEndpoint>>>
+    auth_endpoints: Arc<RwLock<Vec<AuthEndpoint>>>,
 }
 
 impl<H: Handler> Handler for AuthHandler<H> {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
         {
-            let endpoint = AuthEndpoint(vec![req.method.clone()],
-                                        req.url.path().join("/"));
+            let endpoint = AuthEndpoint(vec![req.method.clone()], req.url.path().join("/"));
 
             let guard = self.auth_endpoints.read().unwrap();
 
@@ -137,12 +132,11 @@ impl<H: Handler> Handler for AuthHandler<H> {
         // come within the Authorization header or as a query parameter.
         match AuthMiddleware::get_session_token(req) {
             Some(token) => {
-                if let Err(_) = AuthMiddleware::verify(&token,
-                                                       &self.auth_db_file) {
-                    return EndpointError::with(status::Unauthorized, 401, None)
+                if AuthMiddleware::verify(&token, &self.auth_db_file).is_err() {
+                    return EndpointError::with(status::Unauthorized, 401, None);
                 }
-            },
-            None => return EndpointError::with(status::Unauthorized, 401, None)
+            }
+            None => return EndpointError::with(status::Unauthorized, 401, None),
         };
 
         self.handler.handle(req)
@@ -193,9 +187,9 @@ impl AroundMiddleware for AuthMiddleware {
 
 impl AuthMiddleware {
     pub fn new(auth_endpoints: Vec<AuthEndpoint>, auth_db_file: String) -> AuthMiddleware {
-        AuthMiddleware{
+        AuthMiddleware {
             auth_endpoints: Arc::new(RwLock::new(auth_endpoints)),
-            auth_db_file: auth_db_file
+            auth_db_file: auth_db_file,
         }
     }
 
@@ -215,7 +209,7 @@ impl AuthMiddleware {
     pub fn verify(token: &str, auth_db_file: &str) -> Result<(), ()> {
         let token = match SessionToken::from_string(token) {
             Ok(token) => token,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
 
         let id = token.claims.id.clone();
@@ -228,11 +222,10 @@ impl AuthMiddleware {
                 if users.len() != 1 {
                     return Err(());
                 }
-                if !token.verify(users[0].secret.to_owned().as_bytes(),
-                                 Sha256::new()) {
+                if !token.verify(users[0].secret.to_owned().as_bytes(), Sha256::new()) {
                     return Err(());
                 }
-            },
+            }
             Err(_) => {
                 return Err(());
             }
@@ -244,22 +237,19 @@ impl AuthMiddleware {
     /// Extract the session token string from the Authorization header or
     /// the url query parameters.
     pub fn get_session_token(req: &mut Request) -> Option<String> {
-        match req.headers.clone()
-                 .get::<headers::Authorization<headers::Bearer>>() {
-            Some(&headers::Authorization(headers::Bearer { ref token })) => {
-                Some(token.clone())
-            },
+        match req.headers
+            .clone()
+            .get::<headers::Authorization<headers::Bearer>>() {
+            Some(&headers::Authorization(headers::Bearer { ref token })) => Some(token.clone()),
             _ => {
                 match req.get_ref::<UrlEncodedQuery>() {
                     Ok(params) => {
                         match params.get("auth") {
-                            Some(token) => {
-                                Some(token[0].clone())
-                            },
-                            _ => None
+                            Some(token) => Some(token[0].clone()),
+                            _ => None,
                         }
-                    },
-                    _ => None
+                    }
+                    _ => None,
                 }
             }
         }
@@ -272,11 +262,11 @@ impl AuthMiddleware {
             Some(token) => {
                 let token = match SessionToken::from_string(&token) {
                     Ok(token) => token,
-                    Err(_) => return None
+                    Err(_) => return None,
                 };
                 Some(token.claims.id)
-            },
-            None => None
+            }
+            None => None,
         }
     }
 }
