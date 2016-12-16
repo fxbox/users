@@ -289,10 +289,10 @@ describe! auth_middleware_tests {
         }
 
         let mut router = Router::new();
-        router.get("/authenticated", not_implemented);
-        router.get("/authenticated/:foo/bar/:baz", not_implemented);
-        router.delete("/authenticated", not_implemented);
-        router.get("/not_authenticated", not_implemented);
+        router.get("/authenticated", not_implemented, "not_implemented1");
+        router.get("/authenticated/:foo/bar/:baz", not_implemented, "not_implemented2");
+        router.delete("/authenticated", not_implemented, "not_implemented3");
+        router.get("/not_authenticated", not_implemented, "not_implemented4");
 
         let mut chain = Chain::new(router);
         let mut middleware = manager.get_middleware(

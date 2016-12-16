@@ -1,6 +1,6 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 //! Contains the Iron router for user managing.
 //!
@@ -11,13 +11,13 @@
 //! [REST documentation](https://github.com/fxbox/users/blob/master/doc/API.md)
 //! can be found in the GitHub repository.
 
-use super::auth_middleware::{ AuthEndpoint, AuthMiddleware, SessionToken };
+use super::auth_middleware::{AuthEndpoint, AuthMiddleware, SessionToken};
 use super::errors::*;
 use super::invitation_middleware::InvitationMiddleware;
-use super::users_db::{ User, UserBuilder, UsersDb, ReadFilter };
+use super::users_db::{User, UserBuilder, UsersDb, ReadFilter};
 
 use iron::status;
-use iron::headers::{ Authorization, Basic };
+use iron::headers::{Authorization, Basic};
 use iron::method::Method;
 use iron::prelude::*;
 use iron_cors::CORS;
@@ -25,7 +25,7 @@ use router::Router;
 use rustc_serialize::json;
 
 use std::io::Read;
-use std::sync::{ Arc, RwLock };
+use std::sync::{Arc, RwLock};
 
 type Credentials = (String, String);
 
@@ -37,25 +37,19 @@ pub fn endpoint(path: &str) -> String {
 /// Body response for POST /setup and POST /login
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct SessionTokenResponse {
-    session_token: String
+    session_token: String,
 }
 
 impl SessionTokenResponse {
     fn with_user(user: &User) -> IronResult<Response> {
         let session_token = match SessionToken::from_user(user) {
             Ok(token) => token,
-            Err(_) => return EndpointError::with(
-                status::InternalServerError, 501, None
-            )
+            Err(_) => return EndpointError::with(status::InternalServerError, 501, None),
         };
-        let body_obj = SessionTokenResponse{
-           session_token: session_token
-        };
+        let body_obj = SessionTokenResponse { session_token: session_token };
         let body = match json::encode(&body_obj) {
             Ok(body) => body,
-            Err(_) => return EndpointError::with(
-                status::InternalServerError, 501, None
-            )
+            Err(_) => return EndpointError::with(status::InternalServerError, 501, None),
         };
         Ok(Response::with((status::Created, body)))
     }
@@ -65,19 +59,19 @@ impl SessionTokenResponse {
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct CreateUserResponse {
     pub email: String,
-    pub activation_url: String
+    pub activation_url: String,
 }
 
 /// Body response for GET /users/:id
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct GetUserResponse {
-    user: User
+    user: User,
 }
 
 /// Body response for GET /users
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 struct GetAllUsersResponse {
-    users: Vec<User>
+    users: Vec<User>,
 }
 
 macro_rules! get_user_id_from_request {
@@ -138,7 +132,7 @@ macro_rules! parse_request_body {
 /// ```
 pub struct UsersRouter {
     db_path: String,
-    invitation_middleware: Arc<RwLock<InvitationMiddleware>>
+    invitation_middleware: Arc<RwLock<InvitationMiddleware>>,
 }
 
 impl UsersRouter {
@@ -150,15 +144,16 @@ impl UsersRouter {
         let db = UsersDb::new(db_path);
         let admins = db.read(ReadFilter::IsAdmin(true)).unwrap();
         if !admins.is_empty() {
-            return EndpointError::with(status::Gone, 410,
-                Some("There is already an admin account".to_owned()));
+            return EndpointError::with(status::Gone,
+                                       410,
+                                       Some("There is already an admin account".to_owned()));
         }
 
         #[derive(RustcDecodable, Debug)]
         struct SetupBody {
             name: String,
             email: String,
-            password: String
+            password: String,
         }
 
         let body: SetupBody = parse_request_body!(req);
@@ -170,17 +165,15 @@ impl UsersRouter {
             .admin(true)
             .active(true)
             .finalize() {
-                Ok(user) => user,
-                Err(user_with_error) => {
-                    println!("{:?}", user_with_error);
-                    return from_user_builder_error(user_with_error.error);
-                }
-            };
+            Ok(user) => user,
+            Err(user_with_error) => {
+                println!("{:?}", user_with_error);
+                return from_user_builder_error(user_with_error.error);
+            }
+        };
 
         match db.create(&admin) {
-            Ok(admin) => {
-                SessionTokenResponse::with_user(&admin)
-            },
+            Ok(admin) => SessionTokenResponse::with_user(&admin),
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -193,39 +186,31 @@ impl UsersRouter {
     fn login(req: &mut Request, db_path: &str) -> IronResult<Response> {
         // Return Some pair of valid credentials if both email and password
         // are provided or None elsewhere.
-        fn credentials_from_header(auth: &Authorization<Basic>)
-            -> Option<Credentials> {
-            let &Authorization(Basic {
-                ref username,
-                password: ref maybe_password
-            }) = auth;
-            let something_is_missed =
-                username.is_empty() || match *maybe_password {
-                    None => true,
-                    Some(ref psw) => psw.is_empty()
-                };
+        fn credentials_from_header(auth: &Authorization<Basic>) -> Option<Credentials> {
+            let &Authorization(Basic { ref username, password: ref maybe_password }) = auth;
+            let something_is_missed = username.is_empty() ||
+                                      match *maybe_password {
+                None => true,
+                Some(ref psw) => psw.is_empty(),
+            };
             if something_is_missed {
                 None
             } else {
-                Some((
-                    username.to_owned(),
-                    maybe_password.as_ref().unwrap().to_owned()
-                ))
+                Some((username.to_owned(), maybe_password.as_ref().unwrap().to_owned()))
             }
         }
 
-        let error103 = EndpointError::with(status::BadRequest, 103,
-            Some("Missing or malformed authentication header".to_owned()));
+        let error103 = EndpointError::with(status::BadRequest,
+                                           103,
+                                           Some("Missing or malformed authentication header"
+                                               .to_owned()));
         let header: Option<&Authorization<Basic>> = req.headers.get();
         if let Some(auth) = header {
             if let Some((email, password)) = credentials_from_header(auth) {
                 let users_db = UsersDb::new(db_path);
-                let users = match users_db.read(
-                    ReadFilter::Credentials(email, password)) {
+                let users = match users_db.read(ReadFilter::Credentials(email, password)) {
                     Ok(users) => users,
-                    Err(_) => return EndpointError::with(
-                        status::InternalServerError, 501, None
-                    )
+                    Err(_) => return EndpointError::with(status::InternalServerError, 501, None),
                 };
                 if users.len() != 1 || !users[0].is_active {
                     return EndpointError::with(status::Unauthorized, 401, None);
@@ -245,12 +230,10 @@ impl UsersRouter {
     ///
     /// XXX Once we have a permissions system, this functionality will require
     /// admin permissions.
-    pub fn create_user(req: &mut Request,
-                       db_path: &str)
-        -> IronResult<Response> {
+    pub fn create_user(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct CreateUserBody {
-            email: String
+            email: String,
         }
 
         let body: CreateUserBody = parse_request_body!(req);
@@ -258,12 +241,12 @@ impl UsersRouter {
         let user = match UserBuilder::new(None)
             .email(body.email.clone())
             .finalize() {
-                Ok(user) => user,
-                Err(user_with_error) => {
-                    println!("{:?}", user_with_error);
-                    return from_user_builder_error(user_with_error.error);
-                }
-            };
+            Ok(user) => user,
+            Err(user_with_error) => {
+                println!("{:?}", user_with_error);
+                return from_user_builder_error(user_with_error.error);
+            }
+        };
 
         let db = UsersDb::new(db_path);
         match db.create(&user) {
@@ -272,31 +255,33 @@ impl UsersRouter {
                 //     https://github.com/fxbox/users/issues/84
                 let session_token = match SessionToken::from_user(&user) {
                     Ok(token) => token,
-                    Err(_) => return EndpointError::with(
-                        status::InternalServerError, 501,
-                        Some("Could not generate activation token".to_owned())
-                    )
+                    Err(_) => {
+                        return EndpointError::with(status::InternalServerError,
+                                                   501,
+                                                   Some("Could not generate activation token"
+                                                       .to_owned()))
+                    }
                 };
 
-                let activation_url = endpoint(
-                    &format!("/users/{}/activate?auth={}",user.id, session_token)
-                );
+                let activation_url =
+                    endpoint(&format!("/users/{}/activate?auth={}", user.id, session_token));
 
                 // To help testing, we print the url here.
                 println!("New user: activation url {}", activation_url);
 
                 let body = match json::encode(&CreateUserResponse {
                     email: body.email,
-                    activation_url: activation_url
+                    activation_url: activation_url,
                 }) {
                     Ok(body) => body,
-                    Err(_) => return EndpointError::with(
-                        status::InternalServerError, 501,
-                        Some("CreateUserBody encoding error".to_owned())
-                    )
+                    Err(_) => {
+                        return EndpointError::with(status::InternalServerError,
+                                                   501,
+                                                   Some("CreateUserBody encoding error".to_owned()))
+                    }
                 };
                 Ok(Response::with((status::Created, body)))
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -308,8 +293,7 @@ impl UsersRouter {
     /// Get the information of the user matching the given id.
     /// XXX Only the owner or users with admin privileges should be able to
     ///     access this method. Pending permissions and token scopes system.
-    pub fn get_user(req: &mut Request, db_path: &str)
-        -> IronResult<Response> {
+    pub fn get_user(req: &mut Request, db_path: &str) -> IronResult<Response> {
         let user_id: String;
         get_user_id_from_request!(req, user_id);
 
@@ -321,24 +305,19 @@ impl UsersRouter {
                 }
 
                 if users.len() > 1 {
-                    return EndpointError::with(status::InternalServerError, 501,
-                        Some("Duplicated user".to_owned()));
+                    return EndpointError::with(status::InternalServerError,
+                                               501,
+                                               Some("Duplicated user".to_owned()));
                 }
 
-                let body = match json::encode(&GetUserResponse {
-                    user: users[0].clone(),
-                }) {
+                let body = match json::encode(&GetUserResponse { user: users[0].clone() }) {
                     Ok(body) => body,
-                    Err(_) => return EndpointError::with(
-                        status::InternalServerError, 501, None
-                    )
+                    Err(_) => return EndpointError::with(status::InternalServerError, 501, None),
                 };
 
                 Ok(Response::with((status::Ok, body)))
-            },
-            Err(_) => {
-                EndpointError::with(status::NotFound, 404, None)
             }
+            Err(_) => EndpointError::with(status::NotFound, 404, None),
         }
     }
 
@@ -346,32 +325,30 @@ impl UsersRouter {
     /// Get the list of all registered users.
     /// XXX Once we have a permissions system, this method will require a
     ///     session token with admin scope.
-    pub fn get_all_users(_: &mut Request, db_path: &str)
-        -> IronResult<Response> {
+    pub fn get_all_users(_: &mut Request, db_path: &str) -> IronResult<Response> {
         let db = UsersDb::new(db_path);
         match db.read(ReadFilter::All) {
             Ok(users) => {
-                let users = users.iter().map(
-                    |user| UserBuilder::new(None)
-                        .id(user.id.clone())
-                        .name(user.name.clone())
-                        .email(user.email.clone())
-                        .admin(user.is_admin)
-                        .active(user.is_active)
-                        .finalize().unwrap()
-                ).collect::<Vec<_>>();
+                let users = users.iter()
+                    .map(|user| {
+                        UserBuilder::new(None)
+                            .id(user.id.clone())
+                            .name(user.name.clone())
+                            .email(user.email.clone())
+                            .admin(user.is_admin)
+                            .active(user.is_active)
+                            .finalize()
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>();
 
-                let body_obj = GetAllUsersResponse {
-                    users: users
-                };
+                let body_obj = GetAllUsersResponse { users: users };
                 let body = match json::encode(&body_obj) {
                     Ok(body) => body,
-                    Err(_) => return EndpointError::with(
-                        status::InternalServerError, 501, None
-                    )
+                    Err(_) => return EndpointError::with(status::InternalServerError, 501, None),
                 };
                 Ok(Response::with((status::Ok, body)))
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -384,14 +361,13 @@ impl UsersRouter {
     /// XXX Once we have a permission system this method should
     ///     request a admin scope or check that the user is the
     ///     one editing its own information.
-    pub fn edit_user(req: &mut Request, db_path: &str)
-        -> IronResult<Response> {
+    pub fn edit_user(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct EditUserBody {
             name: Option<String>,
             password: Option<String>,
             // XXX only admin users should be able to change this value.
-            is_admin: Option<bool>
+            is_admin: Option<bool>,
         }
 
         let body: EditUserBody = parse_request_body!(req);
@@ -404,18 +380,21 @@ impl UsersRouter {
             Ok(users) => {
                 if users.len() > 1 {
                     return EndpointError::with(status::InternalServerError,
-                        501, Some("Duplicated user id".to_owned()))
+                                               501,
+                                               Some("Duplicated user id".to_owned()));
                 }
 
                 if users.is_empty() {
                     return EndpointError::with(status::NotFound,
-                        404, Some("User not found".to_owned()))
+                                               404,
+                                               Some("User not found".to_owned()));
                 }
 
                 // If the user is not active, we throw an error.
                 if !(users[0].is_active) {
                     return EndpointError::with(status::PreconditionFailed,
-                        412, Some("User is not active".to_owned()))
+                                               412,
+                                               Some("User is not active".to_owned()));
                 }
 
                 // We build a user from the one obtained from the db and
@@ -446,7 +425,7 @@ impl UsersRouter {
                         from_sqlite_error(error)
                     }
                 }
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -456,12 +435,11 @@ impl UsersRouter {
 
     /// PUT /users/:id/activate handler.
     /// Activate a user by providing a name and a password.
-    pub fn activate_user(req: &mut Request, db_path: &str)
-        -> IronResult<Response> {
+    pub fn activate_user(req: &mut Request, db_path: &str) -> IronResult<Response> {
         #[derive(RustcDecodable, Debug)]
         struct ActivateUserBody {
             name: String,
-            password: String
+            password: String,
         }
 
         let body: ActivateUserBody = parse_request_body!(req);
@@ -474,18 +452,21 @@ impl UsersRouter {
             Ok(users) => {
                 if users.len() > 1 {
                     return EndpointError::with(status::InternalServerError,
-                        501, Some("Duplicated user id".to_owned()))
+                                               501,
+                                               Some("Duplicated user id".to_owned()));
                 }
 
                 if users.is_empty() {
                     return EndpointError::with(status::NotFound,
-                        404, Some("User not found".to_owned()))
+                                               404,
+                                               Some("User not found".to_owned()));
                 }
 
                 // If the user is already active, we throw an error.
                 if users[0].is_active {
                     return EndpointError::with(status::Gone,
-                        409, Some("User is already active".to_owned()))
+                                               409,
+                                               Some("User is already active".to_owned()));
                 }
 
                 // We build a user from the one obtained from the db and
@@ -509,7 +490,7 @@ impl UsersRouter {
                         from_sqlite_error(error)
                     }
                 }
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -521,22 +502,23 @@ impl UsersRouter {
     /// Delete the user matching the given id.
     /// XXX Once we have a permission system this method should
     ///     request a admin scope.
-    pub fn delete_user(req: &mut Request, db_path: &str)
-        -> IronResult<Response> {
+    pub fn delete_user(req: &mut Request, db_path: &str) -> IronResult<Response> {
         let user_id: String;
         get_user_id_from_request!(req, user_id);
 
         let requester_id = match AuthMiddleware::get_user_id(req) {
             Some(id) => id,
-            None => return EndpointError::with(
-                status::InternalServerError, 501,
-                Some("Could not get requester id".to_owned())
-            )
+            None => {
+                return EndpointError::with(status::InternalServerError,
+                                           501,
+                                           Some("Could not get requester id".to_owned()))
+            }
         };
 
         if requester_id == user_id {
-            return EndpointError::with(status::Locked, 423,
-                Some("You cannot delete yourself".to_owned()));
+            return EndpointError::with(status::Locked,
+                                       423,
+                                       Some("You cannot delete yourself".to_owned()));
         }
 
         let db = UsersDb::new(db_path);
@@ -544,12 +526,14 @@ impl UsersRouter {
             Ok(users) => {
                 if users.len() > 1 {
                     return EndpointError::with(status::InternalServerError,
-                        501, Some("Duplicated user id".to_owned()))
+                                               501,
+                                               Some("Duplicated user id".to_owned()));
                 }
 
                 if users.is_empty() {
                     return EndpointError::with(status::NotFound,
-                        404, Some("User not found".to_owned()))
+                                               404,
+                                               Some("User not found".to_owned()));
                 }
 
                 // We don't allow deleting an admin user if it is the only
@@ -558,12 +542,12 @@ impl UsersRouter {
                     match db.read(ReadFilter::IsAdmin(true)) {
                         Ok(users) => {
                             if users.len() <= 1 {
-                                return EndpointError::with(
-                                    status::Locked, 423,
-                                    Some("Cannot delete admin user".to_owned())
-                                );
+                                return EndpointError::with(status::Locked,
+                                                           423,
+                                                           Some("Cannot delete admin user"
+                                                               .to_owned()));
                             }
-                        },
+                        }
                         Err(error) => {
                             println!("{:?}", error);
                             return from_sqlite_error(error);
@@ -581,9 +565,10 @@ impl UsersRouter {
                     }
                 } else {
                     EndpointError::with(status::InternalServerError,
-                        501, Some("Cannot get user id".to_owned()))
+                                        501,
+                                        Some("Cannot get user id".to_owned()))
                 }
-            },
+            }
             Err(error) => {
                 println!("{:?}", error);
                 from_sqlite_error(error)
@@ -594,9 +579,7 @@ impl UsersRouter {
     pub fn new(db_path: &str) -> Self {
         UsersRouter {
             db_path: db_path.to_owned(),
-            invitation_middleware: Arc::new(
-                RwLock::new(InvitationMiddleware::new(API_VERSION))
-            )
+            invitation_middleware: Arc::new(RwLock::new(InvitationMiddleware::new(API_VERSION))),
         }
     }
 
@@ -607,57 +590,63 @@ impl UsersRouter {
         let data = self.db_path.clone();
         router.post(endpoint("/setup"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::setup(req, &data)
-        });
+                        UsersRouter::setup(req, &data)
+                    },
+                    "post_setup");
 
         // Login.
         let data = self.db_path.clone();
         router.post(endpoint("/login"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::login(req, &data)
-        });
+                        UsersRouter::login(req, &data)
+                    },
+                    "post_login");
 
         // User management.
         let data = self.db_path.clone();
         router.post(endpoint("/users"),
                     move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::create_user(req, &data)
-        });
+                        UsersRouter::create_user(req, &data)
+                    },
+                    "post_users");
 
         let data = self.db_path.clone();
         router.get(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_user(req, &data)
-        });
+                       UsersRouter::get_user(req, &data)
+                   },
+                   "get_users_id");
 
         let data = self.db_path.clone();
         router.get(endpoint("/users"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::get_all_users(req, &data)
-        });
+                       UsersRouter::get_all_users(req, &data)
+                   },
+                   "get_users");
 
         let data = self.db_path.clone();
         router.put(endpoint("/users/:id"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::edit_user(req, &data)
-        });
+                       UsersRouter::edit_user(req, &data)
+                   },
+                   "put_users_id");
 
         let data = self.db_path.clone();
         router.put(endpoint("/users/:id/activate"),
                    move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::activate_user(req, &data)
-        });
+                       UsersRouter::activate_user(req, &data)
+                   },
+                   "put_activate");
 
         let data = self.db_path.clone();
         router.delete(endpoint("/users/:id"),
                       move |req: &mut Request| -> IronResult<Response> {
-            UsersRouter::delete_user(req, &data)
-        });
+                          UsersRouter::delete_user(req, &data)
+                      },
+                      "delete_users_id");
 
-        let cors = CORS::new(vec![
-            (vec![Method::Post], endpoint("/login")),
-            (vec![Method::Put], endpoint("/users/:id/activate"))
-        ]);
+        let cors = CORS::new(vec![(vec![Method::Post], endpoint("/login")),
+                                  (vec![Method::Put], endpoint("/users/:id/activate"))]);
 
         let data = self.db_path.clone();
         let auth_middleware = AuthMiddleware::new(vec![
@@ -667,7 +656,8 @@ impl UsersRouter {
                          endpoint("/users/:id")),
             AuthEndpoint(vec![Method::Put],
                          endpoint("/users/:id/activate")),
-        ], data);
+        ],
+                                                  data);
 
         let guard = self.invitation_middleware.write().unwrap();
         let mut chain = Chain::new(router);
