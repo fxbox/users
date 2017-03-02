@@ -84,13 +84,6 @@ macro_rules! get_user_id_from_request {
                                        Some("Missing user id".to_owned()));
         }
 
-        let user_id: String = match user_id.parse() {
-            Ok(user_id) => user_id,
-            Err(_) => return EndpointError::with(
-                status::BadRequest, 400, Some("Invalid user id".to_owned())
-            )
-        };
-
         $user_id = user_id;
     }
 }
@@ -168,7 +161,7 @@ impl UsersRouter {
             Ok(user) => user,
             Err(user_with_error) => {
                 println!("{:?}", user_with_error);
-                return from_user_builder_error(user_with_error.error);
+                return from_user_builder_error(&user_with_error.error);
             }
         };
 
@@ -244,7 +237,7 @@ impl UsersRouter {
             Ok(user) => user,
             Err(user_with_error) => {
                 println!("{:?}", user_with_error);
-                return from_user_builder_error(user_with_error.error);
+                return from_user_builder_error(&user_with_error.error);
             }
         };
 
@@ -415,11 +408,11 @@ impl UsersRouter {
                     Ok(user) => user,
                     Err(user_with_error) => {
                         println!("{:?}", user_with_error);
-                        return from_user_builder_error(user_with_error.error);
+                        return from_user_builder_error(&user_with_error.error);
                     }
                 };
                 match db.update(&user) {
-                    Ok(_) => Ok(Response::with((status::NoContent))),
+                    Ok(_) => Ok(Response::with(status::NoContent)),
                     Err(error) => {
                         println!("{:?}", error);
                         from_sqlite_error(error)
@@ -480,7 +473,7 @@ impl UsersRouter {
                     Ok(user) => user,
                     Err(user_with_error) => {
                         println!("{:?}", user_with_error);
-                        return from_user_builder_error(user_with_error.error);
+                        return from_user_builder_error(&user_with_error.error);
                     }
                 };
                 match db.update(&user) {
@@ -557,7 +550,7 @@ impl UsersRouter {
 
                 if !users[0].id.is_empty() {
                     match db.delete(&users[0].id) {
-                        Ok(_) => Ok(Response::with((status::NoContent))),
+                        Ok(_) => Ok(Response::with(status::NoContent)),
                         Err(error) => {
                             println!("{:?}", error);
                             from_sqlite_error(error)

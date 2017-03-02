@@ -59,9 +59,9 @@ pub fn from_decoder_error(error: json::DecoderError) -> IronResult<Response> {
     match error {
         json::DecoderError::MissingFieldError(field) => {
             match field.as_ref() {
-                "name" => from_user_builder_error(UserBuilderError::Name),
-                "email" => from_user_builder_error(UserBuilderError::Email),
-                "password" => from_user_builder_error(UserBuilderError::Password),
+                "name" => from_user_builder_error(&UserBuilderError::Name),
+                "email" => from_user_builder_error(&UserBuilderError::Email),
+                "password" => from_user_builder_error(&UserBuilderError::Password),
                 _ => EndpointError::with(status::BadRequest, 400,
                                          Some("Missing field".to_owned()))
 
@@ -91,9 +91,9 @@ pub fn from_sqlite_error(error: rusqlite_error) -> IronResult<Response> {
     }
 }
 
-pub fn from_user_builder_error(error: UserBuilderError)
+pub fn from_user_builder_error(error: &UserBuilderError)
     -> IronResult<Response> {
-    let (errno, message) = match error {
+    let (errno, message) = match *error {
         UserBuilderError::Name => {
             (100, Some("Invalid user name".to_owned()))
         },

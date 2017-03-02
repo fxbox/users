@@ -1,6 +1,6 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #![feature(associated_consts, plugin)]
 
@@ -34,28 +34,28 @@ mod invitation_middleware;
 mod users_db;
 mod users_router;
 
-pub use users_db::UsersDb as UsersDb;
-pub use users_db::UserBuilder as UserBuilder;
-pub use users_db::UserBuilderError as UserBuilderError;
-pub use users_db::ReadFilter as ReadFilter;
-pub use users_db::User as User;
-pub use users_router::UsersRouter as UsersRouter;
-pub use auth_middleware::AuthMiddleware as AuthMiddleware;
-pub use auth_middleware::AuthEndpoint as AuthEndpoint;
-pub use auth_middleware::SessionToken as SessionToken;
+pub use users_db::UsersDb;
+pub use users_db::UserBuilder;
+pub use users_db::UserBuilderError;
+pub use users_db::ReadFilter;
+pub use users_db::User;
+pub use users_router::UsersRouter;
+pub use auth_middleware::AuthMiddleware;
+pub use auth_middleware::AuthEndpoint;
+pub use auth_middleware::SessionToken;
 
 pub struct UsersManager {
     db_file_path: String,
-    router: UsersRouter
+    router: UsersRouter,
 }
 
 impl UsersManager {
     /// Create the UsersManager.
     /// The database will be stored at `db_file_path`.
-    pub fn new(db_file_path: &str)-> Self {
+    pub fn new(db_file_path: &str) -> Self {
         UsersManager {
             db_file_path: String::from(db_file_path),
-            router: UsersRouter::new(db_file_path)
+            router: UsersRouter::new(db_file_path),
         }
     }
 
@@ -76,12 +76,10 @@ impl UsersManager {
     pub fn setup_invitation_middleware(&mut self,
                                        email_server: &str,
                                        invitation_url_prepath: &str) {
-        self.router.setup_invitation_middleware(email_server,
-                                                invitation_url_prepath);
+        self.router.setup_invitation_middleware(email_server, invitation_url_prepath);
     }
 
-    pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>)
-                          -> AuthMiddleware {
+    pub fn get_middleware(&self, auth_endpoints: Vec<AuthEndpoint>) -> AuthMiddleware {
         AuthMiddleware::new(auth_endpoints, self.db_file_path.to_owned())
     }
 

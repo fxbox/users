@@ -9,7 +9,6 @@ use hyper::header::{Connection, Headers};
 use iron::AfterMiddleware;
 use iron::method::Method;
 use iron::prelude::*;
-use iron::response::ResponseBody;
 use rustc_serialize::json::{self, DecodeResult};
 
 #[derive(Debug, RustcEncodable)]
@@ -94,22 +93,19 @@ impl AfterMiddleware for InvitationMiddleware {
             return Ok(res);
         }
 
+        // Extract the body's payload.
         let mut payload = Vec::new();
         {
-            let mut response_body = ResponseBody::new(&mut payload);
-            match res.body {
-                Some(ref mut body) => body.write_body(&mut response_body).ok(),
-                None => None,
-            };
+            if let Some(ref mut body) = res.body {
+                body.write_body(&mut payload).ok();
+            }
         }
         let payload = String::from_utf8(payload).unwrap();
         let payload: DecodeResult<CreateUserResponse> = json::decode(&payload);
-        match payload {
-            Ok(payload) => {
-                self.send(&payload.email, &payload.activation_url);
-                Ok(res)
-            }
-            Err(_) => Ok(res),
+        if let Ok(payload) = payload {
+            self.send(&payload.email, &payload.activation_url);
         }
+
+        Ok(res)
     }
 }
