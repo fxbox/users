@@ -3,3 +3,10 @@ rust:
     - nightly-2017-03-02
 script:
     - RUST_BACKTRACE=1 cargo test
+
+after_success: |
+    sudo apt-get install libcurl4-openssl-dev libelf-dev libdw-dev &&
+    wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
+    tar xzf master.tar.gz && mkdir kcov-master/build && cd kcov-master/build && cmake .. && make &&
+    sudo make install && cd ../.. &&
+    kcov --coveralls-id=rZZpOC6rYNGxJi1UtTbnd9hceQYC295GL --exclude-pattern=/.cargo target/kcov target/debug/foxbox_users-*
